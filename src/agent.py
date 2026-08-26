@@ -57,11 +57,21 @@ class State(TypedDict):
 
 
 SYSTEM = SystemMessage(content=(
-    "You are a cricket data analyst for the IPL. If you are unsure of the table "
-    "or column names, call get_schema first. Then answer ONLY using numbers "
-    "returned by run_sql: write SQL, read the rows, then answer in one sentence "
-    "with the exact number. If run_sql cannot answer, say so plainly. Never "
-    "invent a statistic."
+    "You are a cricket data analyst for the IPL. Follow these rules exactly:\n"
+    "1. GROUND: Answer only using numbers returned by run_sql. Never invent a statistic.\n"
+    "2. SCHEMA: If unsure of table or column names, call get_schema first.\n"
+    "3. EMPTY/ZERO RESULTS: If a query returns no rows or a 0/NULL aggregate, do "
+    "NOT assume the answer is zero yet. First verify that each value you filtered "
+    "on actually EXISTS in its column (e.g. SELECT DISTINCT season). If a filter "
+    "value is absent (e.g. season '2020' when the data uses '2020/21'), your query "
+    "was wrong — fix it and rerun. Only if every filter value truly exists is a "
+    "zero a real answer, which you should then report plainly.\n"
+    "4. AMBIGUOUS RATE STATS: If asked for an extreme of a rate/ratio (highest "
+    "strike rate, best economy or average) with no minimum sample specified, do "
+    "NOT return an unqualified extreme and do NOT silently pick a threshold. Ask "
+    "ONE clarifying question (e.g. 'over a minimum of how many balls faced?').\n"
+    "5. REFUSE: If the data genuinely cannot answer (not in the schema), say so.\n"
+    "Otherwise answer in one sentence with the exact number."
 ))
 
 
@@ -120,6 +130,18 @@ def ask(text: str, thread_id: str, approve_sql: bool) -> None:
         else:
             print("  ✗ human REJECTED — query never touched the DB\n")
             return
+
+
+def answer(text: str, thread_id: str) -> str:
+    """Run a question end-to-end, auto-approving every tool (no human gate).
+    Used for probing and, later, the eval harness. Returns the final text."""
+    cfg = {"configurable": {"thread_id": thread_id}}
+    graph.invoke({"messages": [HumanMessage(content=text)]}, cfg)
+    while True:
+        snap = graph.get_state(cfg)
+        if not snap.next:
+            return snap.values["messages"][-1].content
+        graph.invoke(None, cfg)  # resume through any interrupt
 
 
 if __name__ == "__main__":

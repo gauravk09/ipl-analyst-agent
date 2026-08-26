@@ -8,7 +8,9 @@ The journey: progress, what was learned, pushbacks that changed the design.
 3. **`get_schema` tool** — multiple tools + conditional routing.  ✅ DONE
 4. **Multi-turn memory** — state persistence (checkpointer / threads).  ✅ DONE
 5. **Approve-before-run** — human-in-the-loop (interrupt).  ✅ DONE
-6. **Grounded answer + refusal** — answer welded to rows; abstain when unanswerable.
+6. **Grounded answer + refusal** — answer welded to rows; abstain when unanswerable.  ✅ DONE
+   (three outcomes: answer / clarify / refuse; empty-result discriminator = filter
+   value in column domain, not result==0. Prompt-level; sqlglot validator deferred.)
 7. **Data dictionary (RAG)** — retrieval as a tool.
 8. **Eval harness** — assert the ACTUAL answer (the moat).
 9. **Planner + writer + checker** — multi-agent subgraph (capstone).
