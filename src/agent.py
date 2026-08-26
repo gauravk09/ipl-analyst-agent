@@ -16,7 +16,9 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from langgraph.checkpoint.memory import MemorySaver
 
-from tools import run_sql as _run_sql, get_schema as _get_schema  # grounded functions
+from tools import (run_sql as _run_sql, get_schema as _get_schema,
+                   find_player as _find_player)   # grounded functions
+from reference import reference_text              # curated domain knowledge
 
 load_dotenv()
 
@@ -29,6 +31,15 @@ def get_schema() -> str:
 
 
 @tool
+def find_player(fragment: str) -> str:
+    """Find the exact player name(s) in the data matching a fragment (e.g.
+    'Kohli', 'Sharma'). Call this before filtering on a player. If it returns
+    several candidates, ASK the user which one; if none, the player isn't in
+    the data."""
+    return json.dumps(_find_player(fragment))
+
+
+@tool
 def run_sql(query: str) -> str:
     """Run a READ-ONLY SQL query (SELECT/WITH only) against the IPL cricket DB
     and return the rows as JSON. Tables: matches, deliveries. If you don't know
@@ -37,7 +48,7 @@ def run_sql(query: str) -> str:
 
 
 # Order matters only for how they're advertised; the model picks freely.
-TOOLS = [get_schema, run_sql]
+TOOLS = [get_schema, find_player, run_sql]
 
 # --- 2. The model, pointed at Ollama Cloud, TOLD about the tools ------------
 llm = ChatOpenAI(
@@ -71,7 +82,12 @@ SYSTEM = SystemMessage(content=(
     "NOT return an unqualified extreme and do NOT silently pick a threshold. Ask "
     "ONE clarifying question (e.g. 'over a minimum of how many balls faced?').\n"
     "5. REFUSE: If the data genuinely cannot answer (not in the schema), say so.\n"
-    "Otherwise answer in one sentence with the exact number."
+    "6. PLAYERS: To filter on a player, call find_player first. If it returns "
+    "several candidates, ASK the user which one; if none, refuse.\n"
+    "7. FRANCHISES: A team that was renamed appears under multiple names in the "
+    "data. When the user names such a franchise, match ALL its names (see below).\n\n"
+    + reference_text() +
+    "\n\nOtherwise answer in one sentence with the exact number."
 ))
 
 

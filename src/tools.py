@@ -74,6 +74,28 @@ def get_schema() -> dict:
         con.close()
 
 
+def find_player(fragment: str, limit: int = 12) -> dict:
+    """Resolve a player name fragment to the exact name(s) used in the data.
+
+    Implements distinct -> nearest -> (let the caller) ask: returns every
+    distinct batter/bowler name containing the fragment, so the agent can use it
+    if there is one match, ask the user if there are several, or refuse if none.
+    Parameterised query — the fragment is data, never concatenated into SQL.
+    """
+    con = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
+    try:
+        rows = con.execute(
+            """SELECT DISTINCT name FROM (
+                   SELECT batter AS name FROM deliveries
+                   UNION SELECT bowler FROM deliveries
+               ) WHERE name LIKE ? ORDER BY name LIMIT ?""",
+            (f"%{fragment}%", limit),
+        ).fetchall()
+        return {"candidates": [r[0] for r in rows]}
+    finally:
+        con.close()
+
+
 if __name__ == "__main__":
     # Proof: real cricket queries. Every number below is computed by SQLite.
     print("--- Top 5 IPL run scorers (all seasons) ---")

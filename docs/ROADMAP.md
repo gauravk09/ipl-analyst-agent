@@ -11,7 +11,10 @@ The journey: progress, what was learned, pushbacks that changed the design.
 6. **Grounded answer + refusal** — answer welded to rows; abstain when unanswerable.  ✅ DONE
    (three outcomes: answer / clarify / refuse; empty-result discriminator = filter
    value in column domain, not result==0. Prompt-level; sqlglot validator deferred.)
-7. **Data dictionary (RAG)** — retrieval as a tool.
+7. **Curated dictionary + entity resolution** (was "RAG") — give the agent
+   external knowledge; resolve ambiguity by asking.  ✅ DONE
+   - Franchise rename groups (Delhi Daredevils=Capitals etc.) → correct totals.
+   - `find_player`: distinct → nearest → ask if ambiguous (no embeddings).
 8. **Eval harness** — assert the ACTUAL answer (the moat).
 9. **Planner + writer + checker** — multi-agent subgraph (capstone).
 
@@ -19,6 +22,10 @@ The journey: progress, what was learned, pushbacks that changed the design.
 - Repeated: "representative, not a toy" and "just pick and build."
 - Final reset: "maximize MY learning, domain doesn't matter." → dropped trading;
   chose a deterministic, concept-dense, zero-friction vehicle (SQL analyst).
+- "Does RAG even fit? Most questions answer by querying." → correct. RAG needs
+  knowledge that is BOTH not-in-tables AND too-large-for-prompt; our gaps (season
+  format, franchise renames, name variants) are small + fixed. Dropped RAG. Renames
+  → curated dictionary; name variants → distinct + ask (user's suggestion).
 
 ## Open questions
 - ~~Which model handles tool-calling well on Ollama Cloud?~~ RESOLVED: `gpt-oss:120b`
