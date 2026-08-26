@@ -54,6 +54,26 @@ def run_sql(query: str, max_rows: int = 50) -> dict:
         con.close()
 
 
+def get_schema() -> dict:
+    """Return every table and its columns by introspecting the live DB.
+
+    Generic: reads `sqlite_master` for table names, then `PRAGMA table_info`
+    for each table's columns. Zero hardcoding — point this at any SQLite file
+    and it describes itself. The table names come from the DB, not from user
+    input, so interpolating them into PRAGMA is safe.
+    """
+    con = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
+    try:
+        tables = [r[0] for r in con.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
+        return {
+            t: [{"name": c[1], "type": c[2]} for c in con.execute(f"PRAGMA table_info({t})")]
+            for t in tables
+        }
+    finally:
+        con.close()
+
+
 if __name__ == "__main__":
     # Proof: real cricket queries. Every number below is computed by SQLite.
     print("--- Top 5 IPL run scorers (all seasons) ---")

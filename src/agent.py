@@ -15,30 +15,28 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 
-from tools import run_sql as _run_sql  # our grounded, read-only function
+from tools import run_sql as _run_sql, get_schema as _get_schema  # grounded functions
 
 load_dotenv()
 
-# --- 1. Wrap the plain function as a TOOL the model is allowed to call -------
+# --- 1. Wrap the plain functions as TOOLS the model is allowed to call -------
+@tool
+def get_schema() -> str:
+    """List the tables in the cricket database and their columns. Call this
+    FIRST when you are unsure of the exact table or column names."""
+    return json.dumps(_get_schema())
+
+
 @tool
 def run_sql(query: str) -> str:
     """Run a READ-ONLY SQL query (SELECT/WITH only) against the IPL cricket DB
-    and return the rows as JSON.
-
-    Tables:
-      matches(match_id, date, season, city, venue, team1, team2,
-              toss_winner, toss_decision, winner, win_by_runs, win_by_wickets,
-              result, player_of_match, gender, match_type)
-      deliveries(match_id, innings, batting_team, over, ball,
-                 batter, bowler, non_striker,
-                 runs_batter, runs_extras, runs_total,
-                 wicket_kind, player_out, fielders)
-    Notes: season looks like '2016' or '2007/08'. runs_batter excludes extras.
-    """
+    and return the rows as JSON. Tables: matches, deliveries. If you don't know
+    the columns, call get_schema first. season looks like '2016' or '2007/08'."""
     return json.dumps(_run_sql(query))
 
 
-TOOLS = [run_sql]
+# Order matters only for how they're advertised; the model picks freely.
+TOOLS = [get_schema, run_sql]
 
 # --- 2. The model, pointed at Ollama Cloud, TOLD about the tools ------------
 llm = ChatOpenAI(
@@ -58,10 +56,11 @@ class State(TypedDict):
 
 
 SYSTEM = SystemMessage(content=(
-    "You are a cricket data analyst for the IPL. Answer ONLY using numbers "
-    "returned by the run_sql tool. Write SQL, read the rows, then answer in one "
-    "sentence with the exact number. If run_sql cannot answer, say so plainly. "
-    "Never invent a statistic."
+    "You are a cricket data analyst for the IPL. If you are unsure of the table "
+    "or column names, call get_schema first. Then answer ONLY using numbers "
+    "returned by run_sql: write SQL, read the rows, then answer in one sentence "
+    "with the exact number. If run_sql cannot answer, say so plainly. Never "
+    "invent a statistic."
 ))
 
 
@@ -88,7 +87,7 @@ graph = builder.compile()
 
 
 if __name__ == "__main__":
-    question = "Who scored the most runs in IPL season 2016, and how many?"
+    question = "Which team has won the most IPL matches overall, and how many?"
     print(f"Q: {question}\n")
     for step in graph.stream(
         {"messages": [HumanMessage(content=question)]},

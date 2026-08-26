@@ -5,7 +5,7 @@ The journey: progress, what was learned, pushbacks that changed the design.
 ## The build path (each stage = one concept)
 1. **Bundle DB + `run_sql` tool** — a grounded tool that returns real rows.  ✅ DONE
 2. **Agent loop with `run_sql`** — nodes / edges / state, the reason-act loop.  ✅ DONE
-3. **`get_schema` tool** — multiple tools + conditional routing.
+3. **`get_schema` tool** — multiple tools + conditional routing.  ✅ DONE
 4. **Multi-turn memory** — state persistence (checkpointer / threads).
 5. **Approve-before-run** — human-in-the-loop (interrupt).
 6. **Grounded answer + refusal** — answer welded to rows; abstain when unanswerable.
