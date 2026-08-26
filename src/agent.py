@@ -14,6 +14,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
+from langgraph.checkpoint.memory import MemorySaver
 
 from tools import run_sql as _run_sql, get_schema as _get_schema  # grounded functions
 
@@ -83,14 +84,28 @@ builder.add_node("tools", ToolNode(TOOLS))     # runs the requested tool calls
 builder.add_edge(START, "brain")               # always start at the brain
 builder.add_conditional_edges("brain", should_continue, {"tools": "tools", END: END})
 builder.add_edge("tools", "brain")             # THE LOOP: after tools, think again
-graph = builder.compile()
+
+# The checkpointer SAVES the whole state after every step, keyed by thread_id,
+# and RELOADS it at the start of the next invoke with that same thread_id.
+# MemorySaver keeps it in RAM (gone when the process exits). Swap in SqliteSaver
+# for the same behaviour that survives a restart — identical interface.
+checkpointer = MemorySaver()
+graph = builder.compile(checkpointer=checkpointer)
+
+
+def run_turn(text: str, thread_id: str) -> None:
+    """One conversational turn. The thread_id selects WHICH conversation's
+    saved memory to load and append to."""
+    config = {"configurable": {"thread_id": thread_id}}
+    result = graph.invoke({"messages": [HumanMessage(content=text)]}, config=config)
+    print(f"[{thread_id}] Q: {text}")
+    print(f"[{thread_id}] A: {result['messages'][-1].content}\n")
 
 
 if __name__ == "__main__":
-    question = "Which team has won the most IPL matches overall, and how many?"
-    print(f"Q: {question}\n")
-    for step in graph.stream(
-        {"messages": [HumanMessage(content=question)]},
-        stream_mode="values",
-    ):
-        step["messages"][-1].pretty_print()
+    # Same thread -> the follow-up can rely on memory ("he", "next season").
+    run_turn("Who scored the most runs in IPL 2016, and how many?", thread_id="chat-1")
+    run_turn("How many did he score the next season?", thread_id="chat-1")
+
+    # A DIFFERENT thread has its own blank memory -> "he" means nothing here.
+    run_turn("How many did he score the next season?", thread_id="chat-2")
