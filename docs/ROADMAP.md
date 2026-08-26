@@ -17,7 +17,11 @@ The journey: progress, what was learned, pushbacks that changed the design.
    - `find_player`: distinct → nearest → ask if ambiguous (no embeddings).
 8. **Eval harness** — assert the ACTUAL answer (the moat).  ✅ DONE (7/7: values
    736/973/125/155/0 + verified refuse + clarify; caught its own apostrophe bug B3).
-9. **Planner + writer + checker** — multi-agent subgraph (capstone).
+9. **Verifier node** — multi-node wiring + independent verification (capstone).  ✅ DONE
+   Chose a hybrid verifier over a full planner/writer/checker split (that was ceremony
+   for single-query Q&A). Deterministic grounding gate: every number in an answer must
+   trace to a run_sql result or the user's question, else bounce back to the brain
+   (max 2 retries). Clarify/refuse pass through. Unit-tested 5/5; eval still 9/9.
 
 ## Pushbacks that changed the design
 - Repeated: "representative, not a toy" and "just pick and build."

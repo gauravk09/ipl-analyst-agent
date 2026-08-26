@@ -3,6 +3,7 @@
 Run:  python src/agent.py
 """
 import os
+import re
 import json
 from typing import Annotated
 from typing_extensions import TypedDict
@@ -65,6 +66,7 @@ llm_with_tools = llm.bind_tools(TOOLS)
 # question, the model's tool call, and the tool's rows over the loop.
 class State(TypedDict):
     messages: Annotated[list, add_messages]
+    verify_attempts: int   # plain overwrite channel (no reducer): a retry counter
 
 
 SYSTEM = SystemMessage(content=(
@@ -99,19 +101,73 @@ def brain(state: State) -> dict:
     return {"messages": [response]}  # appended by the reducer
 
 
-# --- 5. ROUTER: did the model ask for a tool, or is it done? ----------------
+# --- 5. ROUTER: tool wanted -> tools; else -> verify (not straight to END) --
 def should_continue(state: State) -> str:
     last = state["messages"][-1]
-    return "tools" if getattr(last, "tool_calls", None) else END
+    return "tools" if getattr(last, "tool_calls", None) else "verify"
+
+
+# --- 5b. VERIFIER: a deterministic grounding gate before any answer ships ---
+REFUSE_MARKERS = ("cannot", "can't", "does not contain", "doesn't contain",
+                  "no information", "not in the", "unable", "don't have",
+                  "do not have", "not available", "sorry")
+MAX_VERIFY = 2
+
+
+def _numbers(text: str) -> set:
+    return {int(n.replace(",", "")) for n in re.findall(r"\d[\d,]*", text or "")}
+
+
+def _grounded_numbers(messages) -> set:
+    """Numbers that actually came out of run_sql results."""
+    out = set()
+    for m in messages:
+        if getattr(m, "type", None) == "tool" and getattr(m, "name", None) == "run_sql":
+            out |= _numbers(m.content)
+    return out
+
+
+def verify(state: State) -> dict:
+    """Reject an answer that states a number which came from neither a run_sql
+    result NOR the user's own question. Clarifications and refusals pass through."""
+    msgs = state["messages"]
+    content = msgs[-1].content or ""
+    low = content.lower().replace("’", "'")
+    if content.strip().endswith("?") or any(k in low for k in REFUSE_MARKERS):
+        return {}  # a clarify/refuse — nothing to ground, accept
+
+    question_nums = set()
+    for m in msgs:
+        if getattr(m, "type", None) == "human" and not str(m.content).startswith("[verifier]"):
+            question_nums |= _numbers(m.content)
+    suspicious = _numbers(content) - _grounded_numbers(msgs) - question_nums
+
+    attempts = state.get("verify_attempts", 0)
+    if suspicious and attempts < MAX_VERIFY:
+        note = HumanMessage(content=(
+            f"[verifier] These numbers in your answer did not come from any run_sql "
+            f"result: {sorted(suspicious)}. Query the database to derive them, then "
+            f"give a corrected answer."))
+        return {"messages": [note], "verify_attempts": attempts + 1}
+    return {}  # grounded, or gave up after MAX_VERIFY retries
+
+
+def verify_route(state: State) -> str:
+    last = state["messages"][-1]
+    bounced = getattr(last, "type", None) == "human" and str(last.content).startswith("[verifier]")
+    return "brain" if bounced else END
 
 
 # --- 6. Build the graph: nodes, then edges ----------------------------------
 builder = StateGraph(State)
 builder.add_node("brain", brain)
 builder.add_node("tools", ToolNode(TOOLS))     # runs the requested tool calls
+builder.add_node("verify", verify)             # grounding gate before answering
 builder.add_edge(START, "brain")               # always start at the brain
-builder.add_conditional_edges("brain", should_continue, {"tools": "tools", END: END})
+builder.add_conditional_edges("brain", should_continue, {"tools": "tools", "verify": "verify"})
 builder.add_edge("tools", "brain")             # THE LOOP: after tools, think again
+# verifier accepts (END) or bounces an ungrounded answer back to the brain.
+builder.add_conditional_edges("verify", verify_route, {"brain": "brain", END: END})
 
 # The checkpointer SAVES the whole state after every step, keyed by thread_id,
 # and RELOADS it at the start of the next invoke with that same thread_id.
