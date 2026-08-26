@@ -1,0 +1,105 @@
+# IPL Analyst Agent
+
+A **grounded** data-analyst agent built with [LangGraph](https://langchain-ai.github.io/langgraph/). Ask an IPL cricket database questions in plain English; the agent explores the schema, writes SQL, runs it, self-corrects, and answers **only from real rows** — refusing when the data can't answer and asking when a question is ambiguous. Every number is verified to have come from the database, never from the model.
+
+> *"Which team has won the most IPL matches overall?"* → the agent looks up the schema, writes `SELECT winner, COUNT(*) … GROUP BY winner ORDER BY … LIMIT 1`, runs it, and answers **"Mumbai Indians, 155 wins"** — a number computed by SQLite, checked by a verifier before it reaches you.
+
+## Architecture
+
+The agent is a graph with two feedback loops: one to gather data, one to fix itself.
+
+```mermaid
+graph LR
+    START((start)) --> brain
+    brain -. tool needed .-> tools
+    tools --> brain
+    brain -. answer .-> verify
+    verify -. ungrounded .-> brain
+    verify -. grounded .-> STOP((end))
+
+    classDef node fill:#f2f0ff,stroke:#8b7fd6;
+    class brain,tools,verify node;
+```
+
+| Node | Job |
+|---|---|
+| **brain** | The LLM. Decides which tool to call, writes SQL, reads rows, phrases the answer. |
+| **tools** | Runs the requested tool: `get_schema`, `find_player`, or `run_sql` (read-only). Paused for approval in human-in-the-loop mode. |
+| **verify** | A deterministic gate: every number in the answer must trace to a `run_sql` result (or the user's own question), else it bounces back to **brain** to re-derive (max 2 retries). |
+
+**Loop 1** (`brain → tools → brain`) gathers data. **Loop 2** (`brain → verify → brain`) is self-correction. The answer only leaves the graph once `verify` accepts it.
+
+## The grounding guarantee
+
+Three layers, structural first:
+
+1. **`run_sql` is read-only** — the SQLite connection is opened in `mode=ro`, so writes are *mechanically impossible*, not merely discouraged.
+2. **Numbers come only from tools** — the model is instructed to answer solely from returned rows, with three honest outcomes: **answer / clarify / refuse**.
+3. **The verifier** — a deterministic check that blocks any number the model didn't get from a query. A memorised or hallucinated figure cannot pass.
+
+## Concepts (each built in one stage)
+
+| Concept | Where |
+|---|---|
+| Grounded tools + structural read-only guard | `src/tools.py` |
+| The agent loop (nodes / edges / state) | `src/agent.py` |
+| Multiple tools + routing by name | `get_schema`, `find_player` |
+| State reducer (`add_messages`) | `State` in `src/agent.py` |
+| Persistence, `thread_id`, multi-user memory | `MemorySaver` checkpointer |
+| Human-in-the-loop pause/resume | `interrupt_before=["tools"]` (`ask()`) |
+| Three outcomes: answer / clarify / refuse | system prompt + `find_player` |
+| When *not* to use RAG; curation + entity resolution | `src/reference.py` |
+| Evals that assert the value + grounding | `tests/eval_agent.py` |
+| Independent deterministic verification | `verify` node |
+
+## Data
+
+Built from [Cricsheet](https://cricsheet.org) IPL ball-by-ball JSON:
+
+- **matches** — 1,243 rows, one per game (teams, venue, result, player-of-match).
+- **deliveries** — 295,732 rows, one per ball (batter, bowler, runs, wicket).
+
+Seasons 2008–2026. The DB and raw files are gitignored; rebuild from scratch with one command.
+
+## Run it
+
+```bash
+python3 -m venv .venv && ./.venv/bin/python -m pip install -r requirements.txt
+```
+
+Add your model keys to a `.env` file (gitignored):
+
+```
+OLLAMA_API_KEY=...
+DEEPSEEK_API_KEY=...
+```
+
+Build the database (self-downloads the raw data), then launch:
+
+```bash
+./.venv/bin/python scripts/build_cricket_db.py
+./.venv/bin/streamlit run app.py
+```
+
+Command-line demos:
+
+```bash
+./.venv/bin/python src/agent.py        # human-in-the-loop approve/reject demo
+./.venv/bin/python tests/eval_agent.py # the scoreboard (9/9)
+./.venv/bin/python tests/test_verifier.py
+```
+
+## Tests
+
+- **`tests/eval_agent.py`** — 9/9. Asserts the *actual value* (736, 973, 125, 155, 0), that each value is *grounded* in a real `run_sql` result, plus refuse/clarify outcomes and "must-stay-quiet" cases (no over-refusing or over-clarifying).
+- **`tests/test_verifier.py`** — 5/5. Unit-tests the verifier on synthetic trajectories.
+
+## Design docs
+
+- [`docs/DECISIONS.md`](docs/DECISIONS.md) — finalised choices and what was rejected.
+- [`docs/ROADMAP.md`](docs/ROADMAP.md) — the journey and the pushbacks that changed the design.
+- [`docs/BUGS.md`](docs/BUGS.md) — the bug journal, grouped by lesson (grounded-but-wrong zeros, an over-eager gate, a test that was itself wrong).
+
+## Guardrails
+
+Analysis only — no betting, no advice. The model never writes a number; it routes questions to tools that can prove their answers, and abstains when it can't.
