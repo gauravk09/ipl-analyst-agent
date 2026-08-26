@@ -90,22 +90,40 @@ builder.add_edge("tools", "brain")             # THE LOOP: after tools, think ag
 # MemorySaver keeps it in RAM (gone when the process exits). Swap in SqliteSaver
 # for the same behaviour that survives a restart — identical interface.
 checkpointer = MemorySaver()
-graph = builder.compile(checkpointer=checkpointer)
+# interrupt_before parks the graph in a saved checkpoint just before the `tools`
+# node runs — the pause/resume from idea 3. Resume with graph.invoke(None, cfg).
+graph = builder.compile(checkpointer=checkpointer, interrupt_before=["tools"])
 
 
-def run_turn(text: str, thread_id: str) -> None:
-    """One conversational turn. The thread_id selects WHICH conversation's
-    saved memory to load and append to."""
-    config = {"configurable": {"thread_id": thread_id}}
-    result = graph.invoke({"messages": [HumanMessage(content=text)]}, config=config)
-    print(f"[{thread_id}] Q: {text}")
-    print(f"[{thread_id}] A: {result['messages'][-1].content}\n")
+def ask(text: str, thread_id: str, approve_sql: bool) -> None:
+    """Run one question. The graph pauses before every tool. We auto-approve
+    read-only get_schema, but gate run_sql on the human's decision."""
+    cfg = {"configurable": {"thread_id": thread_id}}
+    print(f"Q: {text}")
+    graph.invoke({"messages": [HumanMessage(content=text)]}, cfg)  # runs to first pause
+
+    while True:
+        snap = graph.get_state(cfg)
+        if not snap.next:                        # nothing pending -> finished
+            print(f"A: {snap.values['messages'][-1].content}\n")
+            return
+        pending = snap.values["messages"][-1].tool_calls
+        for tc in pending:
+            arg = tc["args"].get("query", tc["args"])
+            print(f"  ⏸  wants {tc['name']}: {arg}")
+        if {tc["name"] for tc in pending} == {"get_schema"}:
+            print("  ✓ auto-approved (read-only schema lookup)")
+            graph.invoke(None, cfg)              # resume
+        elif approve_sql:
+            print("  ✓ human APPROVED the SQL — running")
+            graph.invoke(None, cfg)              # resume
+        else:
+            print("  ✗ human REJECTED — query never touched the DB\n")
+            return
 
 
 if __name__ == "__main__":
-    # Same thread -> the follow-up can rely on memory ("he", "next season").
-    run_turn("Who scored the most runs in IPL 2016, and how many?", thread_id="chat-1")
-    run_turn("How many did he score the next season?", thread_id="chat-1")
-
-    # A DIFFERENT thread has its own blank memory -> "he" means nothing here.
-    run_turn("How many did he score the next season?", thread_id="chat-2")
+    ask("Which bowler has taken the most wickets, and how many?",
+        thread_id="appr-1", approve_sql=True)
+    ask("Which bowler has taken the most wickets, and how many?",
+        thread_id="appr-2", approve_sql=False)
