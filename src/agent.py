@@ -82,8 +82,10 @@ SYSTEM = SystemMessage(content=(
     "NOT return an unqualified extreme and do NOT silently pick a threshold. Ask "
     "ONE clarifying question (e.g. 'over a minimum of how many balls faced?').\n"
     "5. REFUSE: If the data genuinely cannot answer (not in the schema), say so.\n"
-    "6. PLAYERS: To filter on a player, call find_player first. If it returns "
-    "several candidates, ASK the user which one; if none, refuse.\n"
+    "6. PLAYERS: To filter on a player, call find_player first. If the name the "
+    "user gave exactly matches one candidate, USE it (do not ask). Only ask when "
+    "several candidates match and none exactly matches what the user wrote; if "
+    "none match at all, refuse.\n"
     "7. FRANCHISES: A team that was renamed appears under multiple names in the "
     "data. When the user names such a franchise, match ALL its names (see below).\n\n"
     + reference_text() +
@@ -158,6 +160,19 @@ def answer(text: str, thread_id: str) -> str:
         if not snap.next:
             return snap.values["messages"][-1].content
         graph.invoke(None, cfg)  # resume through any interrupt
+
+
+def answer_trace(text: str, thread_id: str) -> tuple:
+    """Like answer(), but also returns the full message list (the trajectory),
+    so evals can check HOW the answer was reached, not just the final text."""
+    cfg = {"configurable": {"thread_id": thread_id}}
+    graph.invoke({"messages": [HumanMessage(content=text)]}, cfg)
+    while True:
+        snap = graph.get_state(cfg)
+        if not snap.next:
+            msgs = snap.values["messages"]
+            return msgs[-1].content, msgs
+        graph.invoke(None, cfg)
 
 
 if __name__ == "__main__":

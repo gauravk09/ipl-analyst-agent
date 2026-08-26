@@ -58,7 +58,24 @@ FOUND it. Ends with a tally of what caught each bug.
 - **Found by:** the eval run itself — a case I KNEW should pass failed, so the
   disagreement was in the test, not the agent.
 
+## Lesson: an over-eager gate is a real bug — "must stay quiet" cases catch it
+
+### B4 — find_player over-clarified on an exact name
+- **Happened:** "How many wickets did V Kohli take in IPL 2026?" → agent asked
+  "T Kohli or V Kohli?" instead of answering 0. The user had already given the
+  full exact name.
+- **Why:** stage 7's find_player rule said "several candidates → ask." `find_player
+  ("Kohli")` returns two names, so it asked — ignoring that the user's exact name
+  'V Kohli' was one of them. A gate that fires when it shouldn't.
+- **Fix:** if the user's name exactly matches a candidate, USE it; only ask when
+  several match and none is exact.
+- **Found by:** the HARDENED eval — the new must-stay-quiet / grounding check on a
+  value case turned a silent over-clarification into a red test. The old suite
+  (final-text only) would have missed it. Regression introduced by stage 7,
+  caught by stage 8+.
+
 ## Tally — what found each bug
 - B1: adversarial probe + source verification.
 - B2: adversarial probe.
 - B3: the scoreboard caught its own bug (a known-good case failed).
+- B4: the hardened eval (grounding + must-stay-quiet) caught a stage-7 regression.
