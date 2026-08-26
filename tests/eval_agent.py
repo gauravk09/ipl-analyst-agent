@@ -33,6 +33,9 @@ CASES = [
     dict(type="value",   q="How many wickets did V Kohli take in IPL 2026?",           number=0),
     # must-stay-quiet: a plain answerable question must NOT be refused.
     dict(type="value",   q="How many matches did Chennai Super Kings win in 2018?",    number=11),
+    # coverage: player-vs-player with an 'initial surname' opponent (Ishant -> I Sharma).
+    dict(type="value",   q="How many runs did Virat Kohli score off Ishant Sharma, and off how many balls?",
+         numbers=[112, 79]),
     dict(type="refuse",  q="What is Virat Kohli's annual salary?"),
     dict(type="clarify", q="Which batter has the highest strike rate in IPL history?"),
     # must-stay-quiet: a QUALIFIED rate question must ANSWER, not over-clarify.
@@ -58,6 +61,13 @@ def ran_sql(messages) -> bool:
                for m in messages)
 
 
+def sql_errored(messages) -> bool:
+    """A run_sql that returned an error = the agent wrote a bad query (e.g. a
+    guessed column). A correct-but-messy path is a hidden fragility; flag it."""
+    return any(getattr(m, "type", None) == "tool" and getattr(m, "name", None) == "run_sql"
+               and '"error"' in (m.content or "") for m in messages)
+
+
 def check(case, ans, messages):
     low = (ans or "").lower().replace("’", "'").replace("‘", "'")
     t = case["type"]
@@ -68,22 +78,30 @@ def check(case, ans, messages):
     if t == "clarify":
         return "?" in ans, "must ask a clarifying question"
 
-    if t == "answer":  # must-stay-quiet: answered, grounded, not refused/clarified
+    if t == "answer":  # must-stay-quiet: must ANSWER, not over-clarify or refuse.
+        # A name is a valid answer, so don't demand a number — demand that it
+        # queried, didn't error, isn't a clarifying question, and didn't refuse.
         refused = any(m in low for m in REFUSE_MARKERS)
-        answered = bool(numbers_in(ans)) and ran_sql(messages)
-        return (answered and not refused), "must answer with a grounded number, not over-clarify"
+        over_clarified = ans.strip().endswith("?")
+        answered = ran_sql(messages) and not sql_errored(messages)
+        return (answered and not over_clarified and not refused), \
+            "must answer (grounded), not over-clarify or refuse"
 
-    # value: stated in the text AND grounded in a real run_sql result
-    stated = case["number"] in numbers_in(ans)
-    grounded = case["number"] in run_sql_numbers(messages)
-    ok = stated and grounded
+    # value: every expected number stated in the text AND grounded in a run_sql
+    # result, and no run_sql errored along the way (clean trajectory).
+    wanted = case.get("numbers") or [case["number"]]
+    stated = all(w in numbers_in(ans) for w in wanted)
+    grounded = all(w in run_sql_numbers(messages) for w in wanted)
+    ok = stated and grounded and not sql_errored(messages)
     if "substr" in case:
         ok = ok and case["substr"].lower() in low
-    detail = f"must state+ground {case['number']}"
-    if not stated:
+    detail = f"must state+ground {wanted}"
+    if sql_errored(messages):
+        detail += " [a run_sql ERRORED — messy path]"
+    elif not stated:
         detail += " [NOT stated]"
     elif not grounded:
-        detail += " [stated but NOT grounded in a run_sql result]"
+        detail += " [NOT grounded]"
     return ok, detail
 
 

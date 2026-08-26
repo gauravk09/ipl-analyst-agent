@@ -32,12 +32,12 @@ def get_schema() -> str:
 
 
 @tool
-def find_player(fragment: str) -> str:
-    """Find the exact player name(s) in the data matching a fragment (e.g.
-    'Kohli', 'Sharma'). Call this before filtering on a player. If it returns
-    several candidates, ASK the user which one; if none, the player isn't in
-    the data."""
-    return json.dumps(_find_player(fragment))
+def find_player(name: str) -> str:
+    """Find the exact player name(s) in the data for a full or partial name
+    ('Virat Kohli', 'Ishant Sharma', 'Kohli'). The data uses 'initial surname'
+    form (V Kohli, I Sharma); this handles that. Call it before filtering on a
+    player. Several candidates -> ASK which one; none -> the player isn't here."""
+    return json.dumps(_find_player(name))
 
 
 @tool
@@ -69,10 +69,18 @@ class State(TypedDict):
     verify_attempts: int   # plain overwrite channel (no reducer): a retry counter
 
 
+# Introspect the live schema once at startup and inject it, so the model never
+# guesses a column name (still generic — works on any DB — but always present).
+SCHEMA_TEXT = "\n".join(
+    f"  {t}({', '.join(c['name'] for c in cols)})" for t, cols in _get_schema().items()
+)
+
 SYSTEM = SystemMessage(content=(
-    "You are a cricket data analyst for the IPL. Follow these rules exactly:\n"
+    "You are a cricket data analyst for the IPL. The database schema — use ONLY "
+    "these columns, never invent one:\n" + SCHEMA_TEXT + "\n\nFollow these rules exactly:\n"
     "1. GROUND: Answer only using numbers returned by run_sql. Never invent a statistic.\n"
-    "2. SCHEMA: If unsure of table or column names, call get_schema first.\n"
+    "2. SCHEMA: The schema above is authoritative. If a query errors with 'no such "
+    "column', you guessed — re-read the schema above; never invent a column name.\n"
     "3. EMPTY/ZERO RESULTS: If a query returns no rows or a 0/NULL aggregate, do "
     "NOT assume the answer is zero yet. First verify that each value you filtered "
     "on actually EXISTS in its column (e.g. SELECT DISTINCT season). If a filter "
@@ -84,10 +92,10 @@ SYSTEM = SystemMessage(content=(
     "NOT return an unqualified extreme and do NOT silently pick a threshold. Ask "
     "ONE clarifying question (e.g. 'over a minimum of how many balls faced?').\n"
     "5. REFUSE: If the data genuinely cannot answer (not in the schema), say so.\n"
-    "6. PLAYERS: To filter on a player, call find_player first. If the name the "
-    "user gave exactly matches one candidate, USE it (do not ask). Only ask when "
-    "several candidates match and none exactly matches what the user wrote; if "
-    "none match at all, refuse.\n"
+    "6. PLAYERS: To resolve any player name, use the find_player tool — do NOT "
+    "hand-write DISTINCT queries to hunt for names. If the name the user gave "
+    "exactly matches one candidate, USE it (do not ask). Only ask when several "
+    "candidates match and none exactly matches; if none match at all, refuse.\n"
     "7. FRANCHISES: A team that was renamed appears under multiple names in the "
     "data. When the user names such a franchise, match ALL its names (see below).\n\n"
     + reference_text() +

@@ -74,24 +74,35 @@ def get_schema() -> dict:
         con.close()
 
 
-def find_player(fragment: str, limit: int = 12) -> dict:
-    """Resolve a player name fragment to the exact name(s) used in the data.
+def find_player(name: str, limit: int = 12) -> dict:
+    """Resolve a player name to the exact name(s) in the data.
 
-    Implements distinct -> nearest -> (let the caller) ask: returns every
-    distinct batter/bowler name containing the fragment, so the agent can use it
-    if there is one match, ask the user if there are several, or refuse if none.
-    Parameterised query — the fragment is data, never concatenated into SQL.
+    The data uses an 'initial surname' format ('V Kohli', 'I Sharma'), so a user's
+    full first name won't substring-match. We match on the SURNAME (last token),
+    then, if a first name was given, narrow by its initial ('Ishant Sharma' ->
+    'I Sharma'). Returns candidates so the agent uses one match, asks on several,
+    or refuses on none. Parameterised — the name is data, never concatenated.
     """
+    tokens = [t for t in name.replace(".", " ").split() if t]
+    if not tokens:
+        return {"candidates": []}
+    surname = tokens[-1]
+    initial = tokens[0][0].upper() if len(tokens) > 1 else None
+
     con = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
     try:
         rows = con.execute(
             """SELECT DISTINCT name FROM (
                    SELECT batter AS name FROM deliveries
                    UNION SELECT bowler FROM deliveries
-               ) WHERE name LIKE ? ORDER BY name LIMIT ?""",
-            (f"%{fragment}%", limit),
+               ) WHERE name LIKE ? ORDER BY name""",
+            (f"%{surname}",),
         ).fetchall()
-        return {"candidates": [r[0] for r in rows]}
+        names = [r[0] for r in rows]
+        if initial:  # narrow by first initial, but fall back if that empties it
+            narrowed = [n for n in names if n.split() and n.split()[0][:1].upper() == initial]
+            names = narrowed or names
+        return {"candidates": names[:limit]}
     finally:
         con.close()
 

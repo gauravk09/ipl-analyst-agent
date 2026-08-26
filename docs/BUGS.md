@@ -91,9 +91,31 @@ FOUND it. Ends with a tally of what caught each bug.
 - **Found by:** the user driving the Streamlit UI by hand — a bug the eval's
   fixed questions never exercised.
 
+## Lesson: a correct answer via a messy path is a hidden fragility (coverage + trajectory)
+
+### B6 — column guessing + a name-resolver blind to the data format
+- **Happened:** "runs Kohli scored off Ishant, in how many balls?" → correct answer
+  (112 off 79), but the trail was messy: the agent guessed a non-existent `striker`
+  column (recovered), and hand-rolled `SELECT DISTINCT bowler LIKE …` searches
+  instead of using find_player — because find_player (naive substring) couldn't turn
+  'Ishant' into the data's 'I Sharma'.
+- **Why:** (1) the agent wrote SQL before knowing the columns; (2) find_player matched
+  raw substrings, blind to the data's 'initial surname' format (V Kohli, I Sharma).
+- **Fix:** (1) inject the introspected schema into the system prompt (no guessing,
+  still generic); (2) rewrite find_player to match SURNAME + first INITIAL
+  ('Ishant Sharma' → 'I Sharma'); (3) prompt: use find_player, not manual DISTINCT.
+- **Eval gap:** the suite had NO player-vs-player case, and asserted only
+  values/grounding — never path cleanliness — so a messy-but-correct run passed.
+  Added a coverage case AND a trajectory assertion (no run_sql may error). Also
+  fixed the must-answer check, which over-specified "contains a number" (a player
+  name is a valid answer) — the test was wrong, not the agent.
+- **Found by:** the user driving the Streamlit UI. The eval could not have caught
+  it: wrong coverage + final-answer-only. Now it can.
+
 ## Tally — what found each bug
 - B1: adversarial probe + source verification.
 - B2: adversarial probe.
 - B3: the scoreboard caught its own bug (a known-good case failed).
 - B4: the hardened eval (grounding + must-stay-quiet) caught a stage-7 regression.
 - B5: driving the UI by hand (a presentation bug invisible to value-only evals).
+- B6: driving the UI by hand; exposed an eval coverage + trajectory gap, now closed.
