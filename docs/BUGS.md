@@ -74,8 +74,26 @@ FOUND it. Ends with a tally of what caught each bug.
   (final-text only) would have missed it. Regression introduced by stage 7,
   caught by stage 8+.
 
+## Lesson: the internal data format is not the user-facing answer (grounding vs presentation)
+
+### B5 — raw season label leaked into the answer
+- **Happened:** "from when did IPL start?" → "The IPL started in the 2007/08
+  season." The query was right (MIN season = 2007/08); the presentation was the
+  DB's internal label, not the human year the user wanted (2008).
+- **Why:** curated season knowledge was used only for FILTERING (input), never for
+  PRESENTING (output). Two extra twists: the label→year map is IRREGULAR (2007/08→
+  2008 end-year, but 2020/21→2020 start-year, COVID) so it must be curated
+  explicitly; AND naively answering "2008" would be BOUNCED by the verifier, since
+  2008 isn't literally in a result containing "2007/08".
+- **Fix:** explicit SEASON_YEAR map. (1) Prompt: report the calendar year, not the
+  slash label. (2) Verifier: a season label in a result also grounds its mapped
+  year, so the human answer passes. Both halves needed.
+- **Found by:** the user driving the Streamlit UI by hand — a bug the eval's
+  fixed questions never exercised.
+
 ## Tally — what found each bug
 - B1: adversarial probe + source verification.
 - B2: adversarial probe.
 - B3: the scoreboard caught its own bug (a known-good case failed).
 - B4: the hardened eval (grounding + must-stay-quiet) caught a stage-7 regression.
+- B5: driving the UI by hand (a presentation bug invisible to value-only evals).

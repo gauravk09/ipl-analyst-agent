@@ -19,7 +19,7 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from tools import (run_sql as _run_sql, get_schema as _get_schema,
                    find_player as _find_player)   # grounded functions
-from reference import reference_text              # curated domain knowledge
+from reference import reference_text, SEASON_YEAR  # curated domain knowledge
 
 load_dotenv()
 
@@ -119,11 +119,17 @@ def _numbers(text: str) -> set:
 
 
 def _grounded_numbers(messages) -> set:
-    """Numbers that actually came out of run_sql results."""
+    """Numbers that actually came out of run_sql results. A season label in a
+    result also grounds its human calendar year (so an answer may report '2008'
+    for a result containing '2007/08')."""
     out = set()
     for m in messages:
         if getattr(m, "type", None) == "tool" and getattr(m, "name", None) == "run_sql":
-            out |= _numbers(m.content)
+            content = m.content or ""
+            out |= _numbers(content)
+            for label, year in SEASON_YEAR.items():
+                if label in content:
+                    out.add(year)
     return out
 
 
