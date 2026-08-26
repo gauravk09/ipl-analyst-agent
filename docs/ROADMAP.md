@@ -15,7 +15,8 @@ The journey: progress, what was learned, pushbacks that changed the design.
    external knowledge; resolve ambiguity by asking.  ✅ DONE
    - Franchise rename groups (Delhi Daredevils=Capitals etc.) → correct totals.
    - `find_player`: distinct → nearest → ask if ambiguous (no embeddings).
-8. **Eval harness** — assert the ACTUAL answer (the moat).
+8. **Eval harness** — assert the ACTUAL answer (the moat).  ✅ DONE (7/7: values
+   736/973/125/155/0 + verified refuse + clarify; caught its own apostrophe bug B3).
 9. **Planner + writer + checker** — multi-agent subgraph (capstone).
 
 ## Pushbacks that changed the design

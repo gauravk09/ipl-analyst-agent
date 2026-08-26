@@ -45,6 +45,20 @@ FOUND it. Ends with a tally of what caught each bug.
 - **VERIFIED:** hardened agent now replies "over a minimum of how many balls?"
   instead of returning the 4-ball leader.
 
+## Lesson: a failing test is a disagreement between two ideas — sometimes the TEST is wrong
+
+### B3 — eval reported FAIL on a correct refusal (curly apostrophe)
+- **Happened:** the scoreboard failed "What is Kohli's salary?" even though the
+  agent refused correctly ("I'm sorry, but I don't have that information").
+- **Why:** the refusal marker list had `don't have` with a STRAIGHT apostrophe;
+  the model emitted a CURLY one (’). Substring match missed → false FAIL. Same
+  family as every prior string-matching bug: it produced a wrong verdict, here a
+  false failure rather than a false pass.
+- **Fix:** normalise curly → straight quotes before matching.
+- **Found by:** the eval run itself — a case I KNEW should pass failed, so the
+  disagreement was in the test, not the agent.
+
 ## Tally — what found each bug
 - B1: adversarial probe + source verification.
 - B2: adversarial probe.
+- B3: the scoreboard caught its own bug (a known-good case failed).
