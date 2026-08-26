@@ -6,7 +6,7 @@ Stage 2 wraps it as a LangGraph tool.
 import sqlite3
 import pathlib
 
-DB_PATH = pathlib.Path(__file__).resolve().parent.parent / "data" / "chinook.sqlite"
+DB_PATH = pathlib.Path(__file__).resolve().parent.parent / "data" / "cricket.sqlite"
 
 # Any query whose first keyword is not one of these is refused outright.
 _ALLOWED_START = ("select", "with")
@@ -55,24 +55,30 @@ def run_sql(query: str, max_rows: int = 50) -> dict:
 
 
 if __name__ == "__main__":
-    # Proof: a real analytical query — top 5 artists by revenue — joining
-    # InvoiceLine -> Track -> Album -> Artist. Every number below is from the DB.
-    demo = """
-        SELECT ar.Name AS artist,
-               ROUND(SUM(il.UnitPrice * il.Quantity), 2) AS revenue
-        FROM InvoiceLine il
-        JOIN Track t  ON t.TrackId  = il.TrackId
-        JOIN Album al ON al.AlbumId = t.AlbumId
-        JOIN Artist ar ON ar.ArtistId = al.ArtistId
-        GROUP BY ar.ArtistId
-        ORDER BY revenue DESC
+    # Proof: real cricket queries. Every number below is computed by SQLite.
+    print("--- Top 5 IPL run scorers (all seasons) ---")
+    top_bat = run_sql("""
+        SELECT batter, SUM(runs_batter) AS runs
+        FROM deliveries
+        GROUP BY batter
+        ORDER BY runs DESC
         LIMIT 5
-    """
-    result = run_sql(demo)
-    print("columns:", result["columns"])
-    for row in result["rows"]:
-        print(f"  {row['artist']:25s} ${row['revenue']}")
-    print("row_count:", result["row_count"], "truncated:", result["truncated"])
+    """)
+    for row in top_bat["rows"]:
+        print(f"  {row['batter']:20s} {row['runs']}")
+
+    print("\n--- Top 5 wicket takers (bowler-credited kinds only) ---")
+    top_bowl = run_sql("""
+        SELECT bowler, COUNT(*) AS wickets
+        FROM deliveries
+        WHERE wicket_kind IN ('bowled','caught','lbw','stumped',
+                              'caught and bowled','hit wicket')
+        GROUP BY bowler
+        ORDER BY wickets DESC
+        LIMIT 5
+    """)
+    for row in top_bowl["rows"]:
+        print(f"  {row['bowler']:20s} {row['wickets']}")
 
     print("\n--- read-only guard proof ---")
     print(run_sql("DELETE FROM Artist"))

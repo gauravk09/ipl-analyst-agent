@@ -19,10 +19,15 @@ Model the agent loop as an explicit graph (nodes / edges / state).
 Both via the OpenAI-compatible API → one client class, two configs.
 Primary: `gpt-oss:120b` on Ollama Cloud. Keys in `.env` (gitignored).
 
-## D4 — Data: bundled Chinook sample DB — LOCKED
-Chinook (a music store: artists, albums, tracks, customers, invoices) as a ~1 MB
-local SQLite file. Rich enough for joins, aggregations, and ambiguous questions.
-- **Why:** standard, small, free, offline; realistic schema without setup.
+## D4 — Data: IPL cricket DB from Cricsheet — LOCKED
+Built from Cricsheet IPL ball-by-ball JSON into a local SQLite (`data/cricket.sqlite`):
+- `matches` (1,243 rows) — one per game; teams, venue, result, player-of-match.
+- `deliveries` (295,732 rows) — one per ball; batter, bowler, runs, wicket.
+Seasons 2007/08 → 2026. Reproduce with `python scripts/build_cricket_db.py`
+(self-downloads the raw data). DB + raw are gitignored (36 MB / 103 MB).
+- **Rejected:** Chinook music store (worked, but cricket is what he'll engage with;
+  the agent is domain-neutral so the swap cost nothing). Chinook file kept locally.
+- **Bonus lesson:** this stage added a real ingest (messy JSON → clean relational).
 
 ## D5 — Grounding & guardrails — LOCKED
 - Answers come ONLY from query rows; the model never invents a number.
