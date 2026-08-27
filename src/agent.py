@@ -68,7 +68,7 @@ TOOLS = [get_schema, find_player, run_sql, plot]
 
 # --- 2. The model (any OpenAI-compatible endpoint), TOLD about the tools -----
 DEFAULT_BASE_URL = "https://ollama.com/v1"
-DEFAULT_MODEL = "gpt-oss:120b"
+DEFAULT_MODEL = "gpt-oss:120b"  # 20b is ~2.6x faster but drops to 9/11 on evals
 
 
 def make_llm(api_key: str, base_url: str = DEFAULT_BASE_URL, model: str = DEFAULT_MODEL,
@@ -253,6 +253,26 @@ def run_agent(graph, text: str, thread_id: str) -> tuple:
             msgs = snap.values["messages"]
             return msgs[-1].content, msgs
         graph.invoke(None, cfg)
+
+
+def run_agent_stream(graph, text: str, thread_id: str):
+    """Generator: yields answer text chunks as the model produces them (for a
+    live typing effect), resuming through interrupts. Tool-call turns have empty
+    content so they yield nothing; the final answer streams token by token.
+    After it finishes, read the full trajectory with graph.get_state(...)."""
+    cfg = {"configurable": {"thread_id": thread_id}}
+    inp = {"messages": [HumanMessage(content=text)]}
+    while True:
+        for chunk, meta in graph.stream(inp, cfg, stream_mode="messages"):
+            # Only the brain node's text is the answer; tool results (from the
+            # tools node) also flow through here and must be skipped.
+            if meta.get("langgraph_node") == "brain":
+                piece = getattr(chunk, "content", "") or ""
+                if piece:
+                    yield piece
+        if not graph.get_state(cfg).next:
+            return
+        inp = None  # resume past the interrupt
 
 
 def ask(text: str, thread_id: str, approve_sql: bool) -> None:

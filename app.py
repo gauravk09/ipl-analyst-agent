@@ -70,7 +70,7 @@ def friendly_error(err):
 
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent / "src"))
-from agent import (build_agent, run_agent, graph as DEFAULT_GRAPH,
+from agent import (build_agent, run_agent_stream, graph as DEFAULT_GRAPH,
                    DEFAULT_BASE_URL, DEFAULT_MODEL)
 from langsmith.run_helpers import tracing_context
 
@@ -207,11 +207,14 @@ if prompt:
     with st.chat_message("user"):
         st.markdown(prompt)
     with st.chat_message("assistant"):
+        tid = st.session_state.thread_id
         try:
-            with st.spinner("Querying the database…"):
-                with tracing_context(enabled=tracing):  # off unless the user opts in
-                    content, messages = run_agent(
-                        agent_graph, prompt, st.session_state.thread_id)
+            with tracing_context(enabled=tracing):  # off unless the user opts in
+                # Streams the answer live; tool steps run first (brief wait), then
+                # the final text types out token by token.
+                content = st.write_stream(run_agent_stream(agent_graph, prompt, tid))
+            messages = agent_graph.get_state(
+                {"configurable": {"thread_id": tid}}).values["messages"]
         except Exception as e:
             head, hint = friendly_error(e)
             st.error(f"**{head}** — {hint}")
@@ -219,7 +222,6 @@ if prompt:
                 st.code(str(e))
             st.session_state.messages.pop()  # drop the unanswered question
             st.stop()
-        st.markdown(content)
         # A numeric answer with no tool call suggests the model ignored tools.
         used_tool = any(getattr(m, "type", None) == "tool" for m in messages)
         if not used_tool and re.search(r"\d", content) and not content.strip().endswith("?"):
