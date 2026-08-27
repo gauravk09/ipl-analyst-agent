@@ -4,3 +4,4 @@ langchain-openai==0.2.14
 python-dotenv==1.0.1
 streamlit==1.62.0
 langsmith==0.2.11
+matplotlib==3.10.9

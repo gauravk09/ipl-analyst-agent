@@ -2,6 +2,8 @@
 
 Run:  streamlit run app.py
 """
+import os
+import json
 import uuid
 import pathlib
 import sys
@@ -52,6 +54,20 @@ def queries_from(messages) -> list:
     return out
 
 
+def charts_from(messages) -> list:
+    """Pull chart image paths the plot tool produced."""
+    out = []
+    for m in messages:
+        if getattr(m, "type", None) == "tool" and getattr(m, "name", None) == "plot":
+            try:
+                p = json.loads(m.content).get("path")
+                if p and os.path.exists(p):
+                    out.append(p)
+            except (ValueError, TypeError):
+                pass
+    return out
+
+
 answer_trace = load_agent()
 
 if "thread_id" not in st.session_state:
@@ -82,6 +98,8 @@ st.title(":material/sports_cricket: IPL analyst agent")
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
+        for chart in msg.get("charts", []):
+            st.image(chart)
         if msg.get("sql"):
             with st.expander("SQL the agent ran"):
                 for q in msg["sql"]:
@@ -105,10 +123,14 @@ if prompt:
         with st.spinner("Querying the database…"):
             content, messages = answer_trace(prompt, st.session_state.thread_id)
         st.markdown(content)
+        charts = charts_from(messages)
+        for chart in charts:
+            st.image(chart)
         sql = queries_from(messages)
         if sql:
             with st.expander("SQL the agent ran"):
                 for q in sql:
                     st.code(q, language="sql")
-    st.session_state.messages.append({"role": "assistant", "content": content, "sql": sql})
+    st.session_state.messages.append(
+        {"role": "assistant", "content": content, "sql": sql, "charts": charts})
     st.rerun()

@@ -74,6 +74,17 @@ FOUND it. Ends with a tally of what caught each bug.
   (final-text only) would have missed it. Regression introduced by stage 7,
   caught by stage 8+.
 
+### B7 — over-clarified again on a single non-exact match
+- **Happened:** "Show Mike Hussey season-wise runs" → find_player returned the one
+  candidate "MEK Hussey", but the agent asked "is this who you meant?" instead of
+  using it. Surfaced while building the chart tool.
+- **Why:** rule 6 said "use it if it EXACTLY matches the user's text", and "Mike
+  Hussey" != "MEK Hussey" character-for-character, so with one non-exact candidate
+  the rule was silent and the agent defaulted to asking.
+- **Fix:** if find_player returns exactly ONE candidate, use it (one match is
+  unambiguous); ask only when several match and none is exact.
+- **Found by:** manual testing of the new visualizer feature.
+
 ## Lesson: the internal data format is not the user-facing answer (grounding vs presentation)
 
 ### B5 — raw season label leaked into the answer

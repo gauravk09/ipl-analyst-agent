@@ -14,6 +14,7 @@ Run:  python tests/eval_agent.py     (exit code 1 if any case fails)
 """
 import re
 import sys
+import json
 import pathlib
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "src"))
@@ -36,6 +37,8 @@ CASES = [
     # coverage: player-vs-player with an 'initial surname' opponent (Ishant -> I Sharma).
     dict(type="value",   q="How many runs did Virat Kohli score off Ishant Sharma, and off how many balls?",
          numbers=[112, 79]),
+    # a series question must DRAW a chart (Option A visualizer).
+    dict(type="chart",   q="Show the number of IPL matches played each season as a chart."),
     dict(type="refuse",  q="What is Virat Kohli's annual salary?"),
     dict(type="clarify", q="Which batter has the highest strike rate in IPL history?"),
     # must-stay-quiet: a QUALIFIED rate question must ANSWER, not over-clarify.
@@ -61,6 +64,18 @@ def ran_sql(messages) -> bool:
                for m in messages)
 
 
+def made_chart(messages) -> bool:
+    """A plot tool ran and produced a chart file."""
+    for m in messages:
+        if getattr(m, "type", None) == "tool" and getattr(m, "name", None) == "plot":
+            try:
+                if json.loads(m.content).get("path"):
+                    return True
+            except (ValueError, TypeError):
+                pass
+    return False
+
+
 def sql_errored(messages) -> bool:
     """A run_sql that returned an error = the agent wrote a bad query (e.g. a
     guessed column). A correct-but-messy path is a hidden fragility; flag it."""
@@ -77,6 +92,12 @@ def check(case, ans, messages):
 
     if t == "clarify":
         return "?" in ans, "must ask a clarifying question"
+
+    if t == "chart":  # a series question must produce a chart, not refuse/clarify
+        refused = any(m in low for m in REFUSE_MARKERS)
+        over_clarified = ans.strip().endswith("?")
+        return (made_chart(messages) and not refused and not over_clarified), \
+            "must draw a chart"
 
     if t == "answer":  # must-stay-quiet: must ANSWER, not over-clarify or refuse.
         # A name is a valid answer, so don't demand a number — demand that it

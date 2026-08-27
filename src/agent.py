@@ -19,7 +19,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langsmith import traceable   # LangSmith tracing (auto-captures the graph)
 
 from tools import (run_sql as _run_sql, get_schema as _get_schema,
-                   find_player as _find_player)   # grounded functions
+                   find_player as _find_player, plot as _plot)   # grounded functions
 from reference import reference_text, SEASON_YEAR  # curated domain knowledge
 
 load_dotenv()
@@ -42,6 +42,15 @@ def find_player(name: str) -> str:
 
 
 @tool
+def plot(chart_type: str, x: list, y: list, title: str) -> str:
+    """Draw a chart and save it, for series (e.g. runs per season) or comparisons
+    across categories. chart_type is 'bar' or 'line'; x = labels; y = numeric
+    values you got from run_sql (never invented); title = a short caption. After
+    drawing, ALSO state the key numbers in words."""
+    return json.dumps(_plot(chart_type, x, y, title))
+
+
+@tool
 def run_sql(query: str) -> str:
     """Run a READ-ONLY SQL query (SELECT/WITH only) against the IPL cricket DB
     and return the rows as JSON. Tables: matches, deliveries. If you don't know
@@ -50,7 +59,7 @@ def run_sql(query: str) -> str:
 
 
 # Order matters only for how they're advertised; the model picks freely.
-TOOLS = [get_schema, find_player, run_sql]
+TOOLS = [get_schema, find_player, run_sql, plot]
 
 # --- 2. The model, pointed at Ollama Cloud, TOLD about the tools ------------
 llm = ChatOpenAI(
@@ -94,11 +103,15 @@ SYSTEM = SystemMessage(content=(
     "ONE clarifying question (e.g. 'over a minimum of how many balls faced?').\n"
     "5. REFUSE: If the data genuinely cannot answer (not in the schema), say so.\n"
     "6. PLAYERS: To resolve any player name, use the find_player tool — do NOT "
-    "hand-write DISTINCT queries to hunt for names. If the name the user gave "
-    "exactly matches one candidate, USE it (do not ask). Only ask when several "
-    "candidates match and none exactly matches; if none match at all, refuse.\n"
+    "hand-write DISTINCT queries. If it returns exactly ONE candidate, USE it "
+    "(do not ask — one match is unambiguous). If it returns several, ask which "
+    "one, unless one exactly matches what the user wrote (then use that). If it "
+    "returns none, refuse.\n"
     "7. FRANCHISES: A team that was renamed appears under multiple names in the "
-    "data. When the user names such a franchise, match ALL its names (see below).\n\n"
+    "data. When the user names such a franchise, match ALL its names (see below).\n"
+    "8. CHARTS: If the answer is a series (per season/year) or a comparison across "
+    "several categories, call plot (bar or line) using the values from run_sql, "
+    "then also state the key numbers in words. Skip charts for single-number answers.\n\n"
     + reference_text() +
     "\n\nOtherwise answer in one sentence with the exact number."
 ))

@@ -74,6 +74,39 @@ def get_schema() -> dict:
         con.close()
 
 
+def plot(chart_type: str, x: list, y: list, title: str,
+         xlabel: str = "", ylabel: str = "") -> dict:
+    """Draw a bar/line chart from data the agent ALREADY got via run_sql and save
+    it as a PNG. This is Option A: the agent passes data + chart type only — no
+    arbitrary code runs — so charts stay grounded in real query rows and safe.
+    Returns the file path (plus a count) for the app to display.
+    """
+    import matplotlib
+    matplotlib.use("Agg")  # headless: render to file, no display
+    import matplotlib.pyplot as plt
+    import hashlib
+
+    charts_dir = DB_PATH.parent.parent / "charts"
+    charts_dir.mkdir(exist_ok=True)
+    key = hashlib.md5(f"{chart_type}{title}{x}{y}".encode()).hexdigest()[:10]
+    path = charts_dir / f"chart_{key}.png"
+
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    labels = [str(v) for v in x]
+    if chart_type == "line":
+        ax.plot(labels, y, marker="o")
+    else:
+        ax.bar(labels, y)
+    ax.set_title(title)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
+    fig.tight_layout()
+    fig.savefig(path, dpi=110)
+    plt.close(fig)
+    return {"path": str(path), "points": len(y), "title": title}
+
+
 def find_player(name: str, limit: int = 12) -> dict:
     """Resolve a player name to the exact name(s) in the data.
 
