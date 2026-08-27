@@ -74,37 +74,54 @@ def get_schema() -> dict:
         con.close()
 
 
-def plot(chart_type: str, x: list, y: list, title: str,
+def plot(chart_type: str, title: str, series: list,
          xlabel: str = "", ylabel: str = "") -> dict:
     """Draw a bar/line chart from data the agent ALREADY got via run_sql and save
-    it as a PNG. This is Option A: the agent passes data + chart type only — no
-    arbitrary code runs — so charts stay grounded in real query rows and safe.
-    Returns the file path (plus a count) for the app to display.
+    a PNG. Option A: the agent passes data only — no arbitrary code — so charts
+    stay grounded and safe. Supports MULTIPLE series (e.g. two players compared).
+
+    series: list of {"name": str, "points": [[label, value], ...]}. One entry for
+    a simple chart; several entries for a comparison. Series are aligned on the
+    union of labels (missing values become 0 for bars, gaps for lines).
     """
     import matplotlib
-    matplotlib.use("Agg")  # headless: render to file, no display
+    matplotlib.use("Agg")  # headless
     import matplotlib.pyplot as plt
     import hashlib
 
     charts_dir = DB_PATH.parent.parent / "charts"
     charts_dir.mkdir(exist_ok=True)
-    key = hashlib.md5(f"{chart_type}{title}{x}{y}".encode()).hexdigest()[:10]
+    key = hashlib.md5(f"{chart_type}{title}{series}".encode()).hexdigest()[:10]
     path = charts_dir / f"chart_{key}.png"
 
-    fig, ax = plt.subplots(figsize=(8, 4.5))
-    labels = [str(v) for v in x]
+    # Union of labels across all series, numeric-sorted when possible.
+    maps = [{str(lbl): val for lbl, val in s.get("points", [])} for s in series]
+    labels = sorted({lbl for m in maps for lbl in m},
+                    key=lambda s: (0, int(s)) if s.isdigit() else (1, s))
+
+    fig, ax = plt.subplots(figsize=(9, 4.8))
+    n = len(series)
     if chart_type == "line":
-        ax.plot(labels, y, marker="o")
-    else:
-        ax.bar(labels, y)
+        for s, m in zip(series, maps):
+            ax.plot(labels, [m.get(l) for l in labels], marker="o", label=s.get("name"))
+    else:  # grouped bars
+        width = 0.8 / max(n, 1)
+        idx = range(len(labels))
+        for i, (s, m) in enumerate(zip(series, maps)):
+            ax.bar([j + i * width for j in idx], [m.get(l, 0) for l in labels],
+                   width=width, label=s.get("name"))
+        ax.set_xticks([j + width * (n - 1) / 2 for j in idx])
+        ax.set_xticklabels(labels)
     ax.set_title(title)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
+    if n > 1:
+        ax.legend()
     plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
     fig.tight_layout()
     fig.savefig(path, dpi=110)
     plt.close(fig)
-    return {"path": str(path), "points": len(y), "title": title}
+    return {"path": str(path), "series": [s.get("name") for s in series], "title": title}
 
 
 def find_player(name: str, limit: int = 12) -> dict:

@@ -42,12 +42,13 @@ def find_player(name: str) -> str:
 
 
 @tool
-def plot(chart_type: str, x: list, y: list, title: str) -> str:
-    """Draw a chart and save it, for series (e.g. runs per season) or comparisons
-    across categories. chart_type is 'bar' or 'line'; x = labels; y = numeric
-    values you got from run_sql (never invented); title = a short caption. After
-    drawing, ALSO state the key numbers in words."""
-    return json.dumps(_plot(chart_type, x, y, title))
+def plot(chart_type: str, title: str, series: list) -> str:
+    """Draw a chart and save it. chart_type is 'bar' or 'line'. series is a list of
+    {"name": str, "points": [[label, value], ...]} — ONE entry for a simple chart,
+    or one entry PER player/category for a comparison (e.g. two players year over
+    year). Values come from run_sql, never invented. After drawing, ALSO state the
+    key numbers in words."""
+    return json.dumps(_plot(chart_type, title, series))
 
 
 @tool
@@ -109,9 +110,12 @@ SYSTEM = SystemMessage(content=(
     "returns none, refuse.\n"
     "7. FRANCHISES: A team that was renamed appears under multiple names in the "
     "data. When the user names such a franchise, match ALL its names (see below).\n"
-    "8. CHARTS: If the answer is a series (per season/year) or a comparison across "
-    "several categories, call plot (bar or line) using the values from run_sql, "
-    "then also state the key numbers in words. Skip charts for single-number answers.\n\n"
+    "8. CHARTS: If the answer is a series (per season/year) OR a comparison across "
+    "categories or players, you MUST call plot. Pass series as a list of {name, "
+    "points:[[label,value],...]} — one entry per line/group (one per player for a "
+    "comparison). Use values from run_sql. Then also state the key numbers. Skip "
+    "charts only for single-number answers. If the user explicitly says 'chart', "
+    "'graph', 'plot' or 'visualize', you MUST call plot.\n\n"
     + reference_text() +
     "\n\nOtherwise answer in one sentence with the exact number."
 ))

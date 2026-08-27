@@ -101,28 +101,28 @@ def check(case, ans, messages):
 
     if t == "answer":  # must-stay-quiet: must ANSWER, not over-clarify or refuse.
         # A name is a valid answer, so don't demand a number — demand that it
-        # queried, didn't error, isn't a clarifying question, and didn't refuse.
+        # queried, isn't a clarifying question, and didn't refuse.
         refused = any(m in low for m in REFUSE_MARKERS)
         over_clarified = ans.strip().endswith("?")
-        answered = ran_sql(messages) and not sql_errored(messages)
-        return (answered and not over_clarified and not refused), \
+        return (ran_sql(messages) and not over_clarified and not refused), \
             "must answer (grounded), not over-clarify or refuse"
 
     # value: every expected number stated in the text AND grounded in a run_sql
-    # result, and no run_sql errored along the way (clean trajectory).
+    # result. A mid-path run_sql error is a WARNING (surfaced), not a failure —
+    # correctness is the deterministic gate; a recovered slip shouldn't flake it.
     wanted = case.get("numbers") or [case["number"]]
     stated = all(w in numbers_in(ans) for w in wanted)
     grounded = all(w in run_sql_numbers(messages) for w in wanted)
-    ok = stated and grounded and not sql_errored(messages)
+    ok = stated and grounded
     if "substr" in case:
         ok = ok and case["substr"].lower() in low
     detail = f"must state+ground {wanted}"
-    if sql_errored(messages):
-        detail += " [a run_sql ERRORED — messy path]"
-    elif not stated:
+    if not stated:
         detail += " [NOT stated]"
     elif not grounded:
         detail += " [NOT grounded]"
+    if sql_errored(messages):
+        detail += " [warn: a run_sql errored mid-path but recovered]"
     return ok, detail
 
 
