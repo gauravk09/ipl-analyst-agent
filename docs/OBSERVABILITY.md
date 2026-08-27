@@ -145,3 +145,77 @@ difference between "I can see one trace" and "I know the system's health."
 Traces (the story of one request), metrics (aggregate numbers over time), logs (discrete
 events). Observability is all three; a trace is the LLM-agent's most useful one because
 the failure is usually *where* in the multi-step flow it went wrong.
+
+## Parallelism, batching, and latency
+
+Agent latency ≈ **(number of model round-trips) × (seconds per round-trip)**. Both are
+visible in a trace, and both can be reduced.
+
+### Batching independent tool calls — fewer round-trips
+
+A single model reply can request MANY tools at once — `AIMessage.tool_calls` is a list:
+
+```python
+# what the model emits in ONE turn (from a real trace):
+tool_calls = [
+    {"name": "find_player", "args": {"name": "Kohli"}},
+    {"name": "find_player", "args": {"name": "Rohit Sharma"}},
+]
+```
+
+`ToolNode` runs every call in that list **concurrently** and returns one `ToolMessage`
+each:
+
+```python
+# src/agent.py — one node handles the whole batch
+builder.add_node("tools", ToolNode(TOOLS))
+```
+
+So two lookups happen in ONE `tools` step, after ONE model call — instead of two model
+calls. In the trace you see two `find_player` tool spans as siblings, preceded by a
+single `brain` span.
+
+The model *chooses* how many to batch; we nudge it in the system prompt:
+
+```python
+# src/agent.py — system prompt rule 10
+"10. SPEED: Issue INDEPENDENT tool calls together in ONE turn ... they run in parallel."
+```
+
+**Where the time is actually saved:** the tools are millisecond SQLite reads, so running
+them concurrently saves little. The win is collapsing two ~8s **model** round-trips into
+one. *Batching saves round-trips, not tool time.*
+
+### Seconds per round-trip — reasoning tokens
+
+The other factor is how long each model call takes. For gpt-oss, **reasoning tokens
+dominate** — measured 19.5s / ~1,400 output tokens per call. `reasoning_effort=low` cut
+it to 8.2s / 628 tokens at an identical eval score:
+
+```python
+# src/agent.py
+make_llm(..., reasoning_effort="low")   # auto-enabled for gpt-oss
+```
+
+You see this directly on an LLM span: high token count + high latency on a step that only
+needed a short answer = reasoning overhead. This is the "reasoning tokens are 99% of the
+bill" lesson, read off a real trace.
+
+### Node-level parallelism (not used here)
+
+LangGraph can also fan out to multiple **nodes** running at once, then join — for
+genuinely parallel branches (e.g. a multi-agent panel). Our graph is a simple
+brain↔tools loop, so we don't use it, but it's the tool for that job.
+
+### Watching steps live
+
+`run_agent_events` asks the graph for two stream modes at once — node updates (to show
+which tool is running) and message tokens (to stream the answer):
+
+```python
+for mode, data in graph.stream(inp, cfg, stream_mode=["updates", "messages"]):
+    if mode == "updates":     # a node finished — announce the tools it requested
+        ...
+    else:                     # 'messages' — stream the brain's answer tokens
+        chunk, meta = data
+```
