@@ -68,6 +68,16 @@ def charts_from(messages) -> list:
     return out
 
 
+def render_charts(charts, prefix):
+    """Show each chart with a download button (keys unique per message)."""
+    for i, path in enumerate(charts):
+        st.image(path)
+        with open(path, "rb") as f:
+            st.download_button(
+                "Download chart", f.read(), file_name=os.path.basename(path),
+                mime="image/png", key=f"dl_{prefix}_{i}", icon=":material/download:")
+
+
 answer_trace = load_agent()
 
 if "thread_id" not in st.session_state:
@@ -95,11 +105,10 @@ with st.sidebar:
 
 st.title(":material/sports_cricket: IPL analyst agent")
 
-for msg in st.session_state.messages:
+for idx, msg in enumerate(st.session_state.messages):
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
-        for chart in msg.get("charts", []):
-            st.image(chart)
+        render_charts(msg.get("charts", []), prefix=str(idx))
         if msg.get("sql"):
             with st.expander("SQL the agent ran"):
                 for q in msg["sql"]:
@@ -124,8 +133,7 @@ if prompt:
             content, messages = answer_trace(prompt, st.session_state.thread_id)
         st.markdown(content)
         charts = charts_from(messages)
-        for chart in charts:
-            st.image(chart)
+        render_charts(charts, prefix="live")
         sql = queries_from(messages)
         if sql:
             with st.expander("SQL the agent ran"):

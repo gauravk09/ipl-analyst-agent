@@ -24,7 +24,7 @@ graph LR
 | Node | Job |
 |---|---|
 | **brain** | The LLM. Decides which tool to call, writes SQL, reads rows, phrases the answer. |
-| **tools** | Runs the requested tool: `get_schema`, `find_player`, or `run_sql` (read-only). Paused for approval in human-in-the-loop mode. |
+| **tools** | Runs the requested tool: `get_schema`, `find_player`, `run_sql` (read-only), or `plot` (charts). Paused for approval in human-in-the-loop mode. |
 | **verify** | A deterministic gate: every number in the answer must trace to a `run_sql` result (or the user's own question), else it bounces back to **brain** to re-derive (max 2 retries). |
 
 **Loop 1** (`brain → tools → brain`) gathers data. **Loop 2** (`brain → verify → brain`) is self-correction. The answer only leaves the graph once `verify` accepts it.
@@ -51,6 +51,17 @@ Three layers, structural first:
 | When *not* to use RAG; curation + entity resolution | `src/reference.py` |
 | Evals that assert the value + grounding | `tests/eval_agent.py` |
 | Independent deterministic verification | `verify` node |
+| Safe visualizer (bar/line/combo, secondary axis) | `plot` tool, `src/tools.py` |
+| Observability / tracing | LangSmith ([`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md)) |
+
+## Visualizer
+
+For a series (runs per season) or a comparison (two players), the agent draws a
+chart with the **`plot`** tool and renders it in the app with a **download button**.
+This is the *safe* design: the agent passes only **data + chart type** — it never
+runs arbitrary code — so charts stay grounded in real `run_sql` rows. Supports
+single/multi-series, bar or line, and **combo charts with a secondary y-axis**
+(e.g. strike-rate as bars, runs as a line) for quantities on different scales.
 
 ## Data
 
@@ -72,6 +83,10 @@ Add your model keys to a `.env` file (gitignored):
 ```
 OLLAMA_API_KEY=...
 DEEPSEEK_API_KEY=...
+# optional — enables LangSmith tracing (see docs/OBSERVABILITY.md)
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=...
+LANGSMITH_PROJECT=ipl-analyst-agent
 ```
 
 Build the database (self-downloads the raw data), then launch:
@@ -85,20 +100,23 @@ Command-line demos:
 
 ```bash
 ./.venv/bin/python src/agent.py        # human-in-the-loop approve/reject demo
-./.venv/bin/python tests/eval_agent.py # the scoreboard (9/9)
+./.venv/bin/python tests/eval_agent.py # the scoreboard (11/11)
 ./.venv/bin/python tests/test_verifier.py
+./.venv/bin/python tests/test_plot.py
 ```
 
 ## Tests
 
-- **`tests/eval_agent.py`** — 9/9. Asserts the *actual value* (736, 973, 125, 155, 0), that each value is *grounded* in a real `run_sql` result, plus refuse/clarify outcomes and "must-stay-quiet" cases (no over-refusing or over-clarifying).
+- **`tests/eval_agent.py`** — 11/11. Asserts the *actual value* (736, 973, 125, 155, 0, …), that each value is *grounded* in a real `run_sql` result, plus refuse/clarify outcomes, "must-stay-quiet" cases (no over-refusing or over-clarifying), a player-vs-player case, and a chart case.
 - **`tests/test_verifier.py`** — 5/5. Unit-tests the verifier on synthetic trajectories.
+- **`tests/test_plot.py`** — 4/4. Model-free tests of the chart tool: single, comparison, line, and combo (bars + line on a secondary axis).
 
 ## Design docs
 
 - [`docs/DECISIONS.md`](docs/DECISIONS.md) — finalised choices and what was rejected.
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) — the journey and the pushbacks that changed the design.
 - [`docs/BUGS.md`](docs/BUGS.md) — the bug journal, grouped by lesson (grounded-but-wrong zeros, an over-eager gate, a test that was itself wrong).
+- [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md) — LangSmith tracing: how the agent is instrumented, reading the run tree, and interview Q&A.
 
 ## Guardrails
 
