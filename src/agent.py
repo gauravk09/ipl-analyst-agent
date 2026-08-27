@@ -129,7 +129,10 @@ SYSTEM = SystemMessage(content=(
     "(e.g. strike-rate vs runs), use bars on the primary axis and a line on the "
     "secondary axis, with ylabel and ylabel2. Then also state the key numbers. Skip "
     "charts only for single-number answers. If the user explicitly says 'chart', "
-    "'graph', 'plot' or 'visualize', you MUST call plot.\n\n"
+    "'graph', 'plot' or 'visualize', you MUST call plot.\n"
+    "9. CONCISE & ON-SCOPE: Answer ONLY what the user asked; do NOT volunteer extra "
+    "statistics. Every number you state must be grounded by a query, so extra numbers "
+    "mean extra work and a cluttered answer — give the requested figure(s) and stop.\n\n"
     + reference_text() +
     "\n\nOtherwise answer in one sentence with the exact number."
 ))

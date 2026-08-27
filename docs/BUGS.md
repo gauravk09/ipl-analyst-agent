@@ -130,3 +130,18 @@ FOUND it. Ends with a tally of what caught each bug.
 - B4: the hardened eval (grounding + must-stay-quiet) caught a stage-7 regression.
 - B5: driving the UI by hand (a presentation bug invisible to value-only evals).
 - B6: driving the UI by hand; exposed an eval coverage + trajectory gap, now closed.
+
+## Lesson: over-answering + a grounding verifier = query explosion
+
+### B8 — a combo-chart answer ran ~40 LLM calls and 20+ queries
+- **Happened:** "Compare Dhoni vs de Kock … SR bars + runs line" → the agent drew
+  the chart correctly, then volunteered ~20 extra stats (total matches, runs,
+  common seasons, seasons with 300+, …). Final answer was a bloated "Corrected
+  answer" dump of 56 messages; two queries errored and recovered.
+- **Why:** no conciseness constraint. The verifier requires EVERY stated number to
+  be grounded, so a chatty answer forces one query per volunteered stat — a query
+  explosion. The "Corrected answer" prefix is the verifier bounce.
+- **Fix:** rule 9 (CONCISE & ON-SCOPE) — answer only what's asked, don't volunteer
+  extra statistics. Re-run of the same question: 40→14 LLM calls, 20→6 queries,
+  concise on-scope answer.
+- **Found by:** inspecting a shared LangSmith trace (real production observability).
