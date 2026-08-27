@@ -4,6 +4,14 @@ A **grounded** data-analyst agent built with [LangGraph](https://langchain-ai.gi
 
 > *"Which team has won the most IPL matches overall?"* → the agent looks up the schema, writes `SELECT winner, COUNT(*) … GROUP BY winner ORDER BY … LIMIT 1`, runs it, and answers **"Mumbai Indians, 155 wins"** — a number computed by SQLite, checked by a verifier before it reaches you.
 
+## The app
+
+![The Streamlit app answering a question with a grounded chart](docs/images/app-screenshot.png)
+
+Chat over the IPL database in plain English: grounded answers, charts with a
+**Download** button, and a **"SQL the agent ran"** expander for transparency. Bring
+your own OpenAI-compatible key in the sidebar — the app never uses anyone else's.
+
 ## Architecture
 
 The agent is a graph with two feedback loops: one to gather data, one to fix itself.
