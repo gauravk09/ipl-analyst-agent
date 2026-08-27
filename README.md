@@ -106,16 +106,15 @@ Seasons 2008–2026. The DB and raw files are gitignored; rebuild from scratch w
 python3 -m venv .venv && ./.venv/bin/python -m pip install -r requirements.txt
 ```
 
-Add your model keys to a `.env` file (gitignored):
+Copy the env template and fill in your key(s) — `.env` is gitignored:
 
+```bash
+cp .env.example .env
 ```
-OLLAMA_API_KEY=...
-DEEPSEEK_API_KEY=...
-# optional — enables LangSmith tracing (see docs/OBSERVABILITY.md)
-LANGSMITH_TRACING=true
-LANGSMITH_API_KEY=...
-LANGSMITH_PROJECT=ipl-analyst-agent
-```
+
+You need **one** model key (e.g. `OLLAMA_API_KEY`, or point it at OpenAI/DeepSeek);
+LangSmith tracing is optional. See [`.env.example`](.env.example) for every variable
+and where to get each key.
 
 Build the database (self-downloads the raw data), then launch:
 
