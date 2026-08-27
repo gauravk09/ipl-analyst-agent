@@ -13,7 +13,7 @@ _ALLOWED_START = ("select", "with")
 
 
 def run_sql(query: str, max_rows: int = 50) -> dict:
-    """Run a READ-ONLY SQL query against Chinook and return real rows.
+    """Run a READ-ONLY SQL query against the IPL cricket DB and return real rows.
 
     Read-only is enforced two ways, belt and suspenders:
       1. The connection is opened in `mode=ro`, so the SQLite driver itself
