@@ -99,7 +99,7 @@ def charts_from(messages) -> list:
         if getattr(m, "type", None) == "tool" and getattr(m, "name", None) == "plot":
             try:
                 p = json.loads(m.content).get("path")
-                if p and os.path.exists(p):
+                if p and os.path.exists(p) and p not in out:  # dedupe redraws
                     out.append(p)
             except (ValueError, TypeError):
                 pass
