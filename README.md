@@ -96,6 +96,12 @@ Build the database (self-downloads the raw data), then launch:
 ./.venv/bin/streamlit run app.py
 ```
 
+**Trying the app:** it asks for **your own** OpenAI-compatible API key in the sidebar
+(OpenAI, Ollama Cloud, DeepSeek, …) — nothing is baked in, so it never uses another
+person's keys. Set the base URL + model for non-OpenAI endpoints. LangSmith tracing is
+**off by default** (opt-in toggle). The `.env` keys above are only a fallback for the
+CLI/tests and local dev.
+
 Command-line demos:
 
 ```bash

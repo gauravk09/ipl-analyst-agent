@@ -66,14 +66,21 @@ def run_sql(query: str) -> str:
 # Order matters only for how they're advertised; the model picks freely.
 TOOLS = [get_schema, find_player, run_sql, plot]
 
-# --- 2. The model, pointed at Ollama Cloud, TOLD about the tools ------------
-llm = ChatOpenAI(
-    model="gpt-oss:120b",
-    base_url="https://ollama.com/v1",
-    api_key=os.environ["OLLAMA_API_KEY"],
-    temperature=0,
-)
-llm_with_tools = llm.bind_tools(TOOLS)
+# --- 2. The model (any OpenAI-compatible endpoint), TOLD about the tools -----
+DEFAULT_BASE_URL = "https://ollama.com/v1"
+DEFAULT_MODEL = "gpt-oss:120b"
+
+
+def make_llm(api_key: str, base_url: str = DEFAULT_BASE_URL, model: str = DEFAULT_MODEL):
+    """Bind the tools to an OpenAI-compatible chat model. Any key/endpoint works
+    (OpenAI, Ollama Cloud, DeepSeek, …), so a shared app can use the USER's key."""
+    return ChatOpenAI(model=model, base_url=base_url, api_key=api_key,
+                      temperature=0).bind_tools(TOOLS)
+
+
+# Default model from .env (Ollama Cloud). An empty key is fine at import time —
+# the app builds its own model from a user-supplied key instead of this default.
+llm_with_tools = make_llm(os.environ.get("OLLAMA_API_KEY", ""))
 
 # --- 3. STATE: the shared notepad. Just a growing list of messages ----------
 # add_messages is a "reducer": when a node returns messages, they are APPENDED
@@ -126,12 +133,6 @@ SYSTEM = SystemMessage(content=(
     + reference_text() +
     "\n\nOtherwise answer in one sentence with the exact number."
 ))
-
-
-# --- 4. BRAIN node: call the model on the current conversation --------------
-def brain(state: State) -> dict:
-    response = llm_with_tools.invoke([SYSTEM] + state["messages"])
-    return {"messages": [response]}  # appended by the reducer
 
 
 # --- 5. ROUTER: tool wanted -> tools; else -> verify (not straight to END) --
@@ -198,24 +199,46 @@ def verify_route(state: State) -> str:
 
 
 # --- 6. Build the graph: nodes, then edges ----------------------------------
-builder = StateGraph(State)
-builder.add_node("brain", brain)
-builder.add_node("tools", ToolNode(TOOLS))     # runs the requested tool calls
-builder.add_node("verify", verify)             # grounding gate before answering
-builder.add_edge(START, "brain")               # always start at the brain
-builder.add_conditional_edges("brain", should_continue, {"tools": "tools", "verify": "verify"})
-builder.add_edge("tools", "brain")             # THE LOOP: after tools, think again
-# verifier accepts (END) or bounces an ungrounded answer back to the brain.
-builder.add_conditional_edges("verify", verify_route, {"brain": "brain", END: END})
+def build_graph(llm_with_tools, checkpointer=None):
+    """Compile the agent graph around a given model. Factored into a function so
+    the app can build a graph per user (their own key) without touching tests/CLI."""
+    def brain(state: State) -> dict:  # the LLM call, closed over this model
+        return {"messages": [llm_with_tools.invoke([SYSTEM] + state["messages"])]}
 
-# The checkpointer SAVES the whole state after every step, keyed by thread_id,
-# and RELOADS it at the start of the next invoke with that same thread_id.
-# MemorySaver keeps it in RAM (gone when the process exits). Swap in SqliteSaver
-# for the same behaviour that survives a restart — identical interface.
-checkpointer = MemorySaver()
-# interrupt_before parks the graph in a saved checkpoint just before the `tools`
-# node runs — the pause/resume from idea 3. Resume with graph.invoke(None, cfg).
-graph = builder.compile(checkpointer=checkpointer, interrupt_before=["tools"])
+    builder = StateGraph(State)
+    builder.add_node("brain", brain)
+    builder.add_node("tools", ToolNode(TOOLS))     # runs the requested tool calls
+    builder.add_node("verify", verify)             # grounding gate before answering
+    builder.add_edge(START, "brain")               # always start at the brain
+    builder.add_conditional_edges("brain", should_continue, {"tools": "tools", "verify": "verify"})
+    builder.add_edge("tools", "brain")             # THE LOOP: after tools, think again
+    builder.add_conditional_edges("verify", verify_route, {"brain": "brain", END: END})
+    # MemorySaver keeps per-conversation state in RAM; interrupt_before parks the
+    # graph just before the tools node (pause/resume for human-in-the-loop).
+    return builder.compile(checkpointer=checkpointer or MemorySaver(),
+                           interrupt_before=["tools"])
+
+
+def build_agent(api_key: str, base_url: str = DEFAULT_BASE_URL, model: str = DEFAULT_MODEL):
+    """A graph using a caller-supplied OpenAI-compatible model — so a shared app
+    can run on the USER's key instead of the server's .env."""
+    return build_graph(make_llm(api_key, base_url, model))
+
+
+graph = build_graph(llm_with_tools)  # default (from .env), used by the CLI + tests
+
+
+def run_agent(graph, text: str, thread_id: str) -> tuple:
+    """Invoke, then resume through any interrupts, until done. Returns
+    (final_text, messages). Works on any graph (default or a per-user one)."""
+    cfg = {"configurable": {"thread_id": thread_id}}
+    graph.invoke({"messages": [HumanMessage(content=text)]}, cfg)
+    while True:
+        snap = graph.get_state(cfg)
+        if not snap.next:
+            msgs = snap.values["messages"]
+            return msgs[-1].content, msgs
+        graph.invoke(None, cfg)
 
 
 def ask(text: str, thread_id: str, approve_sql: bool) -> None:
@@ -247,32 +270,15 @@ def ask(text: str, thread_id: str, approve_sql: bool) -> None:
 
 @traceable(run_type="chain", name="answer")
 def answer(text: str, thread_id: str) -> str:
-    """Run a question end-to-end, auto-approving every tool (no human gate).
-    Used for probing and, later, the eval harness. Returns the final text.
-
-    The @traceable parent groups the several graph.invoke() calls (the interrupt
-    makes us resume with invoke(None)) under ONE LangSmith trace per question."""
-    cfg = {"configurable": {"thread_id": thread_id}}
-    graph.invoke({"messages": [HumanMessage(content=text)]}, cfg)
-    while True:
-        snap = graph.get_state(cfg)
-        if not snap.next:
-            return snap.values["messages"][-1].content
-        graph.invoke(None, cfg)  # resume through any interrupt
+    """Run a question on the default graph, auto-approving tools. Returns the text.
+    The @traceable parent groups the several resume-invokes into ONE trace."""
+    return run_agent(graph, text, thread_id)[0]
 
 
 @traceable(run_type="chain", name="answer_trace")
 def answer_trace(text: str, thread_id: str) -> tuple:
-    """Like answer(), but also returns the full message list (the trajectory),
-    so evals can check HOW the answer was reached, not just the final text."""
-    cfg = {"configurable": {"thread_id": thread_id}}
-    graph.invoke({"messages": [HumanMessage(content=text)]}, cfg)
-    while True:
-        snap = graph.get_state(cfg)
-        if not snap.next:
-            msgs = snap.values["messages"]
-            return msgs[-1].content, msgs
-        graph.invoke(None, cfg)
+    """Like answer(), but also returns the full message trajectory (for evals)."""
+    return run_agent(graph, text, thread_id)
 
 
 if __name__ == "__main__":
