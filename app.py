@@ -3,6 +3,7 @@
 Run:  streamlit run app.py
 """
 import os
+import re
 import json
 import uuid
 import pathlib
@@ -34,6 +35,38 @@ SUGGESTIONS = {
     ":green[:material/query_stats:] Sixes in 2020": "How many sixes were hit in IPL 2020?",
     ":violet[:material/groups:] Delhi total wins": "How many matches have Delhi Capitals won in total?",
 }
+
+# (base_url, model) presets. The chosen model MUST support tool/function calling.
+PROVIDER_PRESETS = {
+    "OpenAI": ("https://api.openai.com/v1", "gpt-4o-mini"),
+    "Ollama Cloud": ("https://ollama.com/v1", "gpt-oss:120b"),
+    "DeepSeek": ("https://api.deepseek.com", "deepseek-chat"),
+    "Custom": (None, None),
+}
+
+
+def apply_preset():
+    url, model = PROVIDER_PRESETS[st.session_state.provider]
+    if url:
+        st.session_state.cfg_url, st.session_state.cfg_model = url, model
+
+
+def friendly_error(err):
+    """Map a provider exception to a plain headline + fix."""
+    s = str(err).lower()
+    if any(k in s for k in ("401", "invalid api key", "incorrect api key",
+                            "unauthorized", "authentication")):
+        return "API key rejected", "Check your API key and Base URL in the sidebar."
+    if any(k in s for k in ("tool", "function call", "function_call", "tool_calls")):
+        return ("This model may not support tool calling",
+                "Pick a model that supports tools — e.g. OpenAI `gpt-4o-mini`, or "
+                "`gpt-oss:120b` on Ollama Cloud.")
+    if any(k in s for k in ("404", "does not exist", "model_not_found", "not found")):
+        return "Model not found", "Check the Model name and Base URL for this provider."
+    if any(k in s for k in ("connection", "connect", "timeout", "getaddrinfo",
+                            "name or service", "failed to establish")):
+        return "Couldn't reach the endpoint", "Check the Base URL (and your internet)."
+    return "Something went wrong", "Check your key, Base URL and Model, then try again."
 
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent / "src"))
@@ -87,28 +120,39 @@ if "thread_id" not in st.session_state:
     st.session_state.thread_id = f"ui-{uuid.uuid4().hex[:8]}"
 if "messages" not in st.session_state:
     st.session_state.messages = []
+st.session_state.setdefault("cfg_url", "https://api.openai.com/v1")
+st.session_state.setdefault("cfg_model", "gpt-4o-mini")
 
 with st.sidebar:
     st.header("Your API key")
     st.markdown(
         "Bring your own **OpenAI-compatible** key — this app never uses anyone "
-        "else's. Works with OpenAI, Ollama Cloud, DeepSeek, or any compatible endpoint."
+        "else's. The model must support **tool/function calling**."
     )
-    api_key = st.text_input("API key", type="password",
-                            placeholder="sk-…", label_visibility="collapsed")
-    base_url = st.text_input("Base URL", value="https://api.openai.com/v1")
-    model = st.text_input("Model", value="gpt-4o-mini")
+    st.selectbox("Provider preset", list(PROVIDER_PRESETS), key="provider",
+                 on_change=apply_preset)
+    api_key = st.text_input("API key", type="password", key="api_key",
+                            placeholder="your provider's key")
+    base_url = st.text_input("Base URL", key="cfg_url")
+    model = st.text_input("Model", key="cfg_model")
     tracing = st.toggle("LangSmith tracing", value=False,
                         help="Off by default. On sends traces to LangSmith using "
                              "the LANGSMITH_API_KEY in the environment (if set).")
 
     with st.expander("How to try it"):
         st.markdown(
-            "1. Get a key from your provider (e.g. platform.openai.com).\n"
-            "2. Paste it above. For OpenAI keep the defaults; for others set the "
-            "Base URL + Model (e.g. `https://ollama.com/v1` + `gpt-oss:120b`).\n"
-            "3. Ask a question, or tap a suggestion chip.\n"
-            "4. Tracing is optional — leave it **off** unless you want LangSmith."
+            "**1. Pick a provider preset** — it fills the Base URL + Model for you.\n\n"
+            "**2. Paste that provider's API key.**\n\n"
+            "**3. Ask a question**, or tap a suggestion chip.\n\n"
+            "---\n"
+            "**Ollama Cloud example** (free models, hosted):\n"
+            "- Provider: `Ollama Cloud`\n"
+            "- Base URL: `https://ollama.com/v1`\n"
+            "- Model: `gpt-oss:120b`\n"
+            "- Key: from [ollama.com](https://ollama.com) → Settings → API keys\n\n"
+            "**Local Ollama** (on your machine): Base URL `http://localhost:11434/v1`, "
+            "Model e.g. `qwen2.5` — pick one that supports tools.\n\n"
+            "Tracing is optional — leave it **off** unless you want LangSmith."
         )
 
     st.divider()
@@ -163,11 +207,24 @@ if prompt:
     with st.chat_message("user"):
         st.markdown(prompt)
     with st.chat_message("assistant"):
-        with st.spinner("Querying the database…"):
-            with tracing_context(enabled=tracing):  # off unless the user opts in
-                content, messages = run_agent(
-                    agent_graph, prompt, st.session_state.thread_id)
+        try:
+            with st.spinner("Querying the database…"):
+                with tracing_context(enabled=tracing):  # off unless the user opts in
+                    content, messages = run_agent(
+                        agent_graph, prompt, st.session_state.thread_id)
+        except Exception as e:
+            head, hint = friendly_error(e)
+            st.error(f"**{head}** — {hint}")
+            with st.expander("Technical detail"):
+                st.code(str(e))
+            st.session_state.messages.pop()  # drop the unanswered question
+            st.stop()
         st.markdown(content)
+        # A numeric answer with no tool call suggests the model ignored tools.
+        used_tool = any(getattr(m, "type", None) == "tool" for m in messages)
+        if not used_tool and re.search(r"\d", content) and not content.strip().endswith("?"):
+            st.warning("The model answered without querying the database — it may not "
+                       "support tool calling. Try `gpt-4o-mini` or `gpt-oss:120b`.")
         charts = charts_from(messages)
         render_charts(charts, prefix="live")
         sql = queries_from(messages)
