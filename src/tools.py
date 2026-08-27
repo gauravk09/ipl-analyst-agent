@@ -75,14 +75,17 @@ def get_schema() -> dict:
 
 
 def plot(chart_type: str, title: str, series: list,
-         xlabel: str = "", ylabel: str = "") -> dict:
-    """Draw a bar/line chart from data the agent ALREADY got via run_sql and save
-    a PNG. Option A: the agent passes data only — no arbitrary code — so charts
-    stay grounded and safe. Supports MULTIPLE series (e.g. two players compared).
+         xlabel: str = "", ylabel: str = "", ylabel2: str = "") -> dict:
+    """Draw a chart from data the agent ALREADY got via run_sql and save a PNG.
+    Option A: the agent passes data only — no arbitrary code — so charts stay
+    grounded and safe.
 
-    series: list of {"name": str, "points": [[label, value], ...]}. One entry for
-    a simple chart; several entries for a comparison. Series are aligned on the
-    union of labels (missing values become 0 for bars, gaps for lines).
+    series: list of {"name": str, "points": [[label, value], ...]} plus OPTIONAL
+    per-series "type" ('bar' or 'line', defaults to chart_type) and "axis"
+    ('primary' or 'secondary'). Use a secondary axis + mixed types when two
+    quantities have different scales — e.g. strike-rate as bars on the primary
+    axis and runs as a line on the secondary axis. Series align on the union of
+    labels (missing -> 0 for bars, gap for lines).
     """
     import matplotlib
     matplotlib.use("Agg")  # headless
@@ -94,30 +97,48 @@ def plot(chart_type: str, title: str, series: list,
     key = hashlib.md5(f"{chart_type}{title}{series}".encode()).hexdigest()[:10]
     path = charts_dir / f"chart_{key}.png"
 
-    # Union of labels across all series, numeric-sorted when possible.
     maps = [{str(lbl): val for lbl, val in s.get("points", [])} for s in series]
     labels = sorted({lbl for m in maps for lbl in m},
                     key=lambda s: (0, int(s)) if s.isdigit() else (1, s))
+    idx = list(range(len(labels)))
 
-    fig, ax = plt.subplots(figsize=(9, 4.8))
-    n = len(series)
-    if chart_type == "line":
-        for s, m in zip(series, maps):
-            ax.plot(labels, [m.get(l) for l in labels], marker="o", label=s.get("name"))
-    else:  # grouped bars
-        width = 0.8 / max(n, 1)
-        idx = range(len(labels))
-        for i, (s, m) in enumerate(zip(series, maps)):
-            ax.bar([j + i * width for j in idx], [m.get(l, 0) for l in labels],
-                   width=width, label=s.get("name"))
-        ax.set_xticks([j + width * (n - 1) / 2 for j in idx])
-        ax.set_xticklabels(labels)
+    fig, ax = plt.subplots(figsize=(10, 5))
+    need2 = any(s.get("axis") == "secondary" for s in series)
+    ax2 = ax.twinx() if need2 else None
+
+    def axis_for(s):
+        return ax2 if (s.get("axis") == "secondary" and ax2) else ax
+
+    def type_for(s):
+        return s.get("type") or chart_type
+
+    nb = sum(1 for s in series if type_for(s) == "bar")
+    width = 0.8 / max(nb, 1)
+    bi = 0
+    for s, m in zip(series, maps):
+        a, name = axis_for(s), s.get("name")
+        if type_for(s) == "bar":
+            a.bar([j + bi * width for j in idx], [m.get(l, 0) for l in labels],
+                  width=width, label=name)
+            bi += 1
+        else:
+            a.plot(idx, [m.get(l) for l in labels], marker="o", label=name)
+
+    ax.set_xticks([j + width * (nb - 1) / 2 for j in idx] if nb else idx)
+    ax.set_xticklabels(labels, rotation=45, ha="right")
     ax.set_title(title)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
-    if n > 1:
-        ax.legend()
-    plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
+    if ax2 and ylabel2:
+        ax2.set_ylabel(ylabel2)
+
+    handles, lbls = ax.get_legend_handles_labels()
+    if ax2:
+        h2, l2 = ax2.get_legend_handles_labels()
+        handles, lbls = handles + h2, lbls + l2
+    if len(series) > 1:
+        ax.legend(handles, lbls, loc="upper left", fontsize=8)
+
     fig.tight_layout()
     fig.savefig(path, dpi=110)
     plt.close(fig)

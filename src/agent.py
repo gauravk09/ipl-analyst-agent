@@ -42,13 +42,17 @@ def find_player(name: str) -> str:
 
 
 @tool
-def plot(chart_type: str, title: str, series: list) -> str:
-    """Draw a chart and save it. chart_type is 'bar' or 'line'. series is a list of
-    {"name": str, "points": [[label, value], ...]} — ONE entry for a simple chart,
-    or one entry PER player/category for a comparison (e.g. two players year over
-    year). Values come from run_sql, never invented. After drawing, ALSO state the
-    key numbers in words."""
-    return json.dumps(_plot(chart_type, title, series))
+def plot(chart_type: str, title: str, series: list,
+         ylabel: str = "", ylabel2: str = "") -> str:
+    """Draw a chart and save it. chart_type is the default 'bar' or 'line'. series
+    is a list of {"name", "points": [[label, value], ...]} — one entry per
+    player/category. Each series may ALSO set "type" ('bar'|'line') and "axis"
+    ('primary'|'secondary'). For two quantities on different scales (e.g.
+    strike-rate vs runs), put one as bars on the primary axis and the other as a
+    line on the secondary axis (axis:'secondary'), and set ylabel + ylabel2.
+    Values come from run_sql, never invented. After drawing, ALSO state the key
+    numbers in words."""
+    return json.dumps(_plot(chart_type, title, series, ylabel=ylabel, ylabel2=ylabel2))
 
 
 @tool
@@ -113,7 +117,10 @@ SYSTEM = SystemMessage(content=(
     "8. CHARTS: If the answer is a series (per season/year) OR a comparison across "
     "categories or players, you MUST call plot. Pass series as a list of {name, "
     "points:[[label,value],...]} — one entry per line/group (one per player for a "
-    "comparison). Use values from run_sql. Then also state the key numbers. Skip "
+    "comparison). Use values from run_sql. Each series may set type ('bar'/'line') "
+    "and axis ('primary'/'secondary'); when two quantities have different scales "
+    "(e.g. strike-rate vs runs), use bars on the primary axis and a line on the "
+    "secondary axis, with ylabel and ylabel2. Then also state the key numbers. Skip "
     "charts only for single-number answers. If the user explicitly says 'chart', "
     "'graph', 'plot' or 'visualize', you MUST call plot.\n\n"
     + reference_text() +

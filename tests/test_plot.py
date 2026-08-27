@@ -19,6 +19,12 @@ CASES = [
                          {"name": "Pant",  "points": [["2016", 198], ["2017", 366]]}])),
     ("line", plot("line", "trend",
                   [{"name": "Runs", "points": [["2008", 10], ["2009", 20], ["2010", 15]]}])),
+    ("combo: bars(primary) + line(secondary axis)", plot("bar", "SR vs Runs",
+                  [{"name": "SR", "type": "bar", "axis": "primary",
+                    "points": [["2018", 134], ["2019", 130]]},
+                   {"name": "Runs", "type": "line", "axis": "secondary",
+                    "points": [["2018", 455], ["2019", 416]]}],
+                  ylabel="Strike rate", ylabel2="Runs")),
 ]
 
 if __name__ == "__main__":
