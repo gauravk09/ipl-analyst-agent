@@ -16,6 +16,7 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from langgraph.checkpoint.memory import MemorySaver
+from langsmith import traceable   # LangSmith tracing (auto-captures the graph)
 
 from tools import (run_sql as _run_sql, get_schema as _get_schema,
                    find_player as _find_player)   # grounded functions
@@ -220,9 +221,13 @@ def ask(text: str, thread_id: str, approve_sql: bool) -> None:
             return
 
 
+@traceable(run_type="chain", name="answer")
 def answer(text: str, thread_id: str) -> str:
     """Run a question end-to-end, auto-approving every tool (no human gate).
-    Used for probing and, later, the eval harness. Returns the final text."""
+    Used for probing and, later, the eval harness. Returns the final text.
+
+    The @traceable parent groups the several graph.invoke() calls (the interrupt
+    makes us resume with invoke(None)) under ONE LangSmith trace per question."""
     cfg = {"configurable": {"thread_id": thread_id}}
     graph.invoke({"messages": [HumanMessage(content=text)]}, cfg)
     while True:
@@ -232,6 +237,7 @@ def answer(text: str, thread_id: str) -> str:
         graph.invoke(None, cfg)  # resume through any interrupt
 
 
+@traceable(run_type="chain", name="answer_trace")
 def answer_trace(text: str, thread_id: str) -> tuple:
     """Like answer(), but also returns the full message list (the trajectory),
     so evals can check HOW the answer was reached, not just the final text."""
