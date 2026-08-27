@@ -63,6 +63,34 @@ runs arbitrary code — so charts stay grounded in real `run_sql` rows. Supports
 single/multi-series, bar or line, and **combo charts with a secondary y-axis**
 (e.g. strike-rate as bars, runs as a line) for quantities on different scales.
 
+## Example outputs
+
+The agent draws charts from real query rows (single series, comparisons, and
+dual-axis combos), each downloadable in the app.
+
+**Single series** — runs per season:
+
+![Runs per season](docs/images/viz-single-bar.png)
+
+**Comparison** — two players, grouped bars aligned on the shared year axis:
+
+![Player comparison](docs/images/viz-comparison.png)
+
+**Combo, dual-axis** — strike-rate as bars (left axis) and runs as a line (right
+axis), for quantities on different scales:
+
+![Combo chart](docs/images/viz-combo.png)
+
+### Tracing (LangSmith)
+
+Every question is **one trace** — the brain / tool / verify spans with token counts
+and latency. This is real run data pulled from LangSmith:
+
+![LangSmith run tree](docs/images/langsmith-trace.png)
+
+See [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md) for how to read the run tree.
+The live UI is at smith.langchain.com → project `ipl-analyst-agent`.
+
 ## Data
 
 Built from [Cricsheet](https://cricsheet.org) IPL ball-by-ball JSON:
