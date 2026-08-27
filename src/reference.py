@@ -36,6 +36,28 @@ SEASON_NOTE = (
 )
 
 
+# The data stores players as "initials surname" (RG Sharma, V Kohli). A full first
+# name can't be mapped to initials by rule (Rohit -> RG), so popular players are
+# curated: "full name" -> exact data name. Prevents the agent asking "which Sharma?"
+# for a household name like Rohit Sharma (who IS in the data, as RG Sharma).
+PLAYER_ALIASES = {
+    "rohit sharma": "RG Sharma", "virat kohli": "V Kohli", "ms dhoni": "MS Dhoni",
+    "mahendra singh dhoni": "MS Dhoni", "chris gayle": "CH Gayle",
+    "ab de villiers": "AB de Villiers", "david warner": "DA Warner",
+    "suresh raina": "SK Raina", "shikhar dhawan": "S Dhawan", "kl rahul": "KL Rahul",
+    "rishabh pant": "RR Pant", "hardik pandya": "HH Pandya",
+    "sachin tendulkar": "SR Tendulkar", "andre russell": "AD Russell",
+    "yuvraj singh": "Yuvraj Singh", "gautam gambhir": "G Gambhir",
+    "shreyas iyer": "SS Iyer", "quinton de kock": "Q de Kock",
+    "faf du plessis": "F du Plessis", "ruturaj gaikwad": "RD Gaikwad",
+    "glenn maxwell": "GJ Maxwell", "jasprit bumrah": "JJ Bumrah",
+    "sunil narine": "SP Narine", "ravindra jadeja": "RA Jadeja",
+    "yuzvendra chahal": "YS Chahal", "bhuvneshwar kumar": "B Kumar",
+    "ravichandran ashwin": "R Ashwin", "deepak chahar": "DL Chahar",
+    "rashid khan": "Rashid Khan", "trent boult": "TA Boult",
+}
+
+
 def reference_text() -> str:
     """The curated knowledge, rendered for the system prompt."""
     lines = ["Franchise name history — when the user names a franchise, match ALL of its names:"]

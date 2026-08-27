@@ -161,3 +161,19 @@ FOUND it. Ends with a tally of what caught each bug.
 - **Result:** combo **115s → 37.9s**, chart restored, eval still **11/11**.
 - **Found by:** the user reporting the latency; isolated per-call timing pinpointed
   reasoning tokens as the cause.
+
+## Lesson: a household name that "looks missing" erodes trust — curate the stars
+
+### B10 — agent asked "which Rohit Sharma?" for a superstar
+- **Happened:** "Compare … Rohit Sharma …" → agent asked "which Rohit Sharma: R
+  Sharma, RG Sharma, or Raghu Sharma?" — making it look like the dataset lacks
+  Rohit. He's there as **RG Sharma** (7,331 IPL runs).
+- **Why:** the data stores players as "initials surname" (RG Sharma). find_player
+  matches surname + FIRST initial, so "Rohit Sharma" → initial 'R' → three R-Sharmas,
+  none exactly "Rohit". Full first name → initials can't be derived by rule.
+- **Fix:** a curated PLAYER_ALIASES map (full name → data name) for ~30 stars, checked
+  first in find_player. "Rohit Sharma" → "RG Sharma" directly. Non-stars still use the
+  fuzzy surname+initial path. Also: rule 4 now says if a minimum IS given, answer (don't
+  re-ask) — killing a flaky over-clarify.
+- **Found by:** capturing a Streamlit screenshot for the README — the Rohit clarify
+  showed up on camera. (Driving the UI finds what fixed evals don't.)

@@ -6,6 +6,8 @@ Stage 2 wraps it as a LangGraph tool.
 import sqlite3
 import pathlib
 
+from reference import PLAYER_ALIASES  # curated full-name -> data-name for stars
+
 DB_PATH = pathlib.Path(__file__).resolve().parent.parent / "data" / "cricket.sqlite"
 
 # Any query whose first keyword is not one of these is refused outright.
@@ -154,6 +156,10 @@ def find_player(name: str, limit: int = 12) -> dict:
     'I Sharma'). Returns candidates so the agent uses one match, asks on several,
     or refuses on none. Parameterised — the name is data, never concatenated.
     """
+    alias = PLAYER_ALIASES.get(name.strip().lower())
+    if alias:  # a curated star name — resolve directly, no ambiguity
+        return {"candidates": [alias]}
+
     tokens = [t for t in name.replace(".", " ").split() if t]
     if not tokens:
         return {"candidates": []}
