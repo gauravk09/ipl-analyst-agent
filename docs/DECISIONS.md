@@ -34,3 +34,19 @@ Seasons 2007/08 → 2026. Reproduce with `python scripts/build_cricket_db.py`
 - Refuse / abstain when the schema can't answer.
 - `run_sql` is READ-ONLY (SELECT only) — no writes, no DDL. Enforced in code,
   not by asking the model nicely.
+
+## D6 — Player name resolution: curated star aliases, NOT the Cricsheet register — LOCKED
+Players are stored as "initials surname" (RG Sharma, V Kohli). Users type full names
+(Rohit Sharma). `find_player` matches surname + first initial, so "Rohit Sharma" → 'R'
+→ several R-Sharmas → a confusing "which Sharma?" clarify that looks like the star is
+missing (he's there, as RG Sharma).
+- **Rejected — the Cricsheet register** (`people.csv`, 18,469 players): it contains only
+  the SAME short names the data already uses, plus unique IDs + external keys. It has NO
+  full first names — "Rohit Sharma" lives only on external sources (ESPNcricinfo via
+  `key_cricinfo`). Using it for name resolution would mean ~18k external lookups.
+- **Chosen** — a curated `PLAYER_ALIASES` map (~30 household names → data name) checked
+  first in `find_player`; the fuzzy surname+initial path handles everyone else. Honest
+  curation: full-name → initials can't be derived by a rule, so we map the names users
+  actually type.
+- **Parked:** the register stays a future option for canonical player IDs (disambiguating
+  two players with the same short name) or enrichment — not for name resolution.
