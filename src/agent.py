@@ -71,16 +71,22 @@ DEFAULT_BASE_URL = "https://ollama.com/v1"
 DEFAULT_MODEL = "gpt-oss:120b"
 
 
-def make_llm(api_key: str, base_url: str = DEFAULT_BASE_URL, model: str = DEFAULT_MODEL):
+def make_llm(api_key: str, base_url: str = DEFAULT_BASE_URL, model: str = DEFAULT_MODEL,
+             reasoning_effort=None):
     """Bind the tools to an OpenAI-compatible chat model. Any key/endpoint works
-    (OpenAI, Ollama Cloud, DeepSeek, …), so a shared app can use the USER's key."""
-    return ChatOpenAI(model=model, base_url=base_url, api_key=api_key,
-                      temperature=0).bind_tools(TOOLS)
+    (OpenAI, Ollama Cloud, DeepSeek, …), so a shared app can use the USER's key.
+    reasoning_effort='low' roughly halves latency on gpt-oss (reasoning tokens
+    dominate); only passed when set, since non-reasoning models reject it."""
+    kwargs = dict(model=model, base_url=base_url, api_key=api_key, temperature=0)
+    if reasoning_effort:
+        kwargs["reasoning_effort"] = reasoning_effort
+    return ChatOpenAI(**kwargs).bind_tools(TOOLS)
 
 
-# Default model from .env (Ollama Cloud). An empty key is fine at import time —
-# the app builds its own model from a user-supplied key instead of this default.
-llm_with_tools = make_llm(os.environ.get("OLLAMA_API_KEY", ""))
+# Default model from .env (Ollama Cloud), with low reasoning effort for speed.
+# An empty key is fine at import time — the app builds its own model from a
+# user-supplied key instead of this default.
+llm_with_tools = make_llm(os.environ.get("OLLAMA_API_KEY", ""), reasoning_effort="low")
 
 # --- 3. STATE: the shared notepad. Just a growing list of messages ----------
 # add_messages is a "reducer": when a node returns messages, they are APPENDED
@@ -128,11 +134,14 @@ SYSTEM = SystemMessage(content=(
     "and axis ('primary'/'secondary'); when two quantities have different scales "
     "(e.g. strike-rate vs runs), use bars on the primary axis and a line on the "
     "secondary axis, with ylabel and ylabel2. Then also state the key numbers. Skip "
-    "charts only for single-number answers. If the user explicitly says 'chart', "
-    "'graph', 'plot' or 'visualize', you MUST call plot.\n"
+    "charts only for single-number answers. If the user asks for a chart, graph, "
+    "plot, bar, line, trend or a secondary axis, you MUST call plot.\n"
     "9. CONCISE & ON-SCOPE: Answer ONLY what the user asked; do NOT volunteer extra "
     "statistics. Every number you state must be grounded by a query, so extra numbers "
-    "mean extra work and a cluttered answer — give the requested figure(s) and stop.\n\n"
+    "mean extra work and a cluttered answer — give the requested figure(s) and stop.\n"
+    "10. SPEED: Issue INDEPENDENT tool calls together in ONE turn (e.g. resolve both "
+    "players at once, or run two independent queries together) — they run in parallel. "
+    "Prefer ONE consolidated query over several small ones.\n\n"
     + reference_text() +
     "\n\nOtherwise answer in one sentence with the exact number."
 ))
@@ -224,8 +233,10 @@ def build_graph(llm_with_tools, checkpointer=None):
 
 def build_agent(api_key: str, base_url: str = DEFAULT_BASE_URL, model: str = DEFAULT_MODEL):
     """A graph using a caller-supplied OpenAI-compatible model — so a shared app
-    can run on the USER's key instead of the server's .env."""
-    return build_graph(make_llm(api_key, base_url, model))
+    can run on the USER's key instead of the server's .env. Auto-enables low
+    reasoning effort for gpt-oss (big speedup); left off for models that reject it."""
+    effort = "low" if "gpt-oss" in model.lower() else None
+    return build_graph(make_llm(api_key, base_url, model, reasoning_effort=effort))
 
 
 graph = build_graph(llm_with_tools)  # default (from .env), used by the CLI + tests

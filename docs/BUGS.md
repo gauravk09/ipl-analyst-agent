@@ -145,3 +145,19 @@ FOUND it. Ends with a tally of what caught each bug.
   extra statistics. Re-run of the same question: 40→14 LLM calls, 20→6 queries,
   concise on-scope answer.
 - **Found by:** inspecting a shared LangSmith trace (real production observability).
+
+## Lesson: reasoning tokens dominate latency — measure, then turn the right knob
+
+### B9 — the combo question took ~115–200s
+- **Happened:** "Compare Dhoni vs de Kock … SR bars + runs line" took 115s+ (once 202s).
+- **Why:** measured, not guessed. Per-call latency of gpt-oss:120b was ~19.5s with
+  ~1,400 output tokens — almost all *reasoning* tokens. Times ~14 sequential agent
+  round trips = ~2–3 minutes. (Exactly the "reasoning tokens are 99% of the bill"
+  lesson.)
+- **Fix (stacked):** (1) `reasoning_effort=low` → 19.5s→8.2s per call, same eval
+  score; (2) broaden the "must draw a chart" trigger (the question said 'bars'/'line',
+  not 'chart', so it was skipping the plot); (3) prompt to BATCH independent tool
+  calls + consolidate queries → 14→8 calls, 9→2 queries.
+- **Result:** combo **115s → 37.9s**, chart restored, eval still **11/11**.
+- **Found by:** the user reporting the latency; isolated per-call timing pinpointed
+  reasoning tokens as the cause.
