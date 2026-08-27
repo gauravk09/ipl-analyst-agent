@@ -255,6 +255,41 @@ def run_agent(graph, text: str, thread_id: str) -> tuple:
         graph.invoke(None, cfg)
 
 
+_STATUS = {
+    "get_schema": lambda a: "Reading the database schema",
+    "find_player": lambda a: f"Resolving player: {a.get('name', '')}",
+    "run_sql": lambda a: "Running a query",
+    "plot": lambda a: "Drawing the chart",
+}
+
+
+def run_agent_events(graph, text: str, thread_id: str):
+    """Generator yielding ('status', text) for each tool the agent is about to run,
+    and ('token', text) for the streamed answer. Lets the UI show live progress
+    during the tool phase, then the answer typing out."""
+    cfg = {"configurable": {"thread_id": thread_id}}
+    inp = {"messages": [HumanMessage(content=text)]}
+    while True:
+        for mode, data in graph.stream(inp, cfg, stream_mode=["updates", "messages"]):
+            if mode == "updates":
+                brain_out = data.get("brain")
+                if brain_out:  # the brain just decided — announce any tools it wants
+                    for tc in getattr(brain_out["messages"][-1], "tool_calls", None) or []:
+                        fn = _STATUS.get(tc["name"])
+                        yield ("status", fn(tc["args"]) if fn else tc["name"])
+                if (data.get("verify") or {}).get("messages"):
+                    yield ("status", "Re-checking figures (verifier)")
+            else:  # ('messages') — stream only the brain's answer tokens
+                chunk, meta = data
+                if meta.get("langgraph_node") == "brain":
+                    piece = getattr(chunk, "content", "") or ""
+                    if piece:
+                        yield ("token", piece)
+        if not graph.get_state(cfg).next:
+            return
+        inp = None  # resume past the interrupt
+
+
 def run_agent_stream(graph, text: str, thread_id: str):
     """Generator: yields answer text chunks as the model produces them (for a
     live typing effect), resuming through interrupts. Tool-call turns have empty
