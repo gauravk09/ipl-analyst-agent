@@ -6,11 +6,12 @@ A **grounded** data-analyst agent built with [LangGraph](https://langchain-ai.gi
 
 ## The app
 
-![The Streamlit app answering a question with a grounded chart](docs/images/app-screenshot.png)
+![Demo: asking for a dual-axis chart and getting a grounded answer](docs/images/demo.gif)
 
-Chat over the IPL database in plain English: grounded answers, charts with a
-**Download** button, and a **"SQL the agent ran"** expander for transparency. Bring
-your own OpenAI-compatible key in the sidebar — the app never uses anyone else's.
+Chat over the IPL database in plain English: grounded answers, charts (bar / line /
+dual-axis) with a **Download** button, and a **"SQL the agent ran"** expander for
+transparency. Bring your own OpenAI-compatible key in the sidebar — the app never uses
+anyone else's.
 
 ## Architecture
 
